@@ -71,11 +71,15 @@
         x: W * 0.78,
         y: H * 0.32,
         baseY: H * 0.32,
+        baseX: W * 0.78,
         bobPhase: 0,
+        movePhase: 0,       // horizontal movement phase
         wing: 0,
         wingTimer: 0,
-        chargeAmount: 0, // 0..1 cuando carga un rayo
-        eyeGlow: 0
+        chargeAmount: 0,    // 0..1 cuando carga un rayo
+        eyeGlow: 0,
+        scale: 1.0,         // grows before ray phase
+        targetScale: 1.0
     };
 
     let bestScore = parseInt(localStorage.getItem('flappy_best') || '0', 10) || 0;
@@ -945,6 +949,13 @@
         screenShake = 0;
         winTimer = 0;
         confetti = [];
+        boss.x = boss.baseX;
+        boss.y = boss.baseY;
+        boss.scale = 1.0;
+        boss.targetScale = 1.0;
+        boss.movePhase = 0;
+        boss.bobPhase = 0;
+        boss.eyeGlow = 0;
         // Si veníamos de la música del jefe, regresar a la principal
         if (currentTrack === 'boss' && musicPlaying) {
             crossfadeTo('main', 1200);
@@ -956,7 +967,10 @@
         // Durante phase 1 del jefe los tubos varían de tamaño / hueco
         let gap = PIPE_GAP;
         if (state === STATE.BOSS && bossPhase === 1) {
-            gap = Math.round((130 + Math.random() * 50) * _hRatio); // scale boss gap too
+            gap = Math.round((165 + Math.random() * 40) * _hRatio); // wider gap during boss
+        } else if (state === STATE.BOSS && bossPhase === 2) {
+            // During ray phase: very wide gaps so player can dodge rays
+            gap = Math.round(280 * _hRatio);
         }
         const minTop = _pipeMargin;
         const maxTop = GROUND_Y - gap - _pipeMargin;
@@ -1047,10 +1061,10 @@
                 if (currentTrack !== 'boss' && musicPlaying) crossfadeTo('boss', 800);
             }
 
-            // Spawn de tubos
+            // Spawn de tubos (also during ray phase with wide gaps)
             const allowSpawn =
                 state === STATE.PLAYING ||
-                (state === STATE.BOSS && bossPhase === 1 && !pipesFadingOut);
+                (state === STATE.BOSS && !pipesFadingOut);
             if (allowSpawn) {
                 spawnTimer += dt;
                 const interval = state === STATE.BOSS ? PIPE_INTERVAL * 0.85 : PIPE_INTERVAL;
@@ -1063,7 +1077,7 @@
             // Movimiento + score + animación de tubos
             for (const p of pipes) {
                 p.x -= PIPE_SPEED * dt;
-                if (state === STATE.PLAYING && !p.scored && p.x + PIPE_WIDTH < bird.x - BIRD_HITBOX_R) {
+                if ((state === STATE.PLAYING || state === STATE.BOSS) && !p.scored && p.x + PIPE_WIDTH < bird.x - BIRD_HITBOX_R) {
                     p.scored = true;
                     score++;
                     sfx.score();
@@ -1102,10 +1116,26 @@
                     bossTime += dt;
                 }
 
+                // Boss movement: sways left-right and bobs up-down
                 boss.bobPhase += dt * 1.4;
-                boss.y = boss.baseY + Math.sin(boss.bobPhase) * 35;
+                boss.movePhase += dt * 0.6;
+                const moveRangeX = 60; // horizontal sway
+                const moveRangeY = 55; // vertical bob
+                boss.x = boss.baseX + Math.sin(boss.movePhase) * moveRangeX;
+                boss.y = boss.baseY + Math.sin(boss.bobPhase) * moveRangeY;
+                // Keep boss from overlapping the bird area
+                if (boss.x < W * 0.55) boss.x = W * 0.55;
+
                 boss.wingTimer += dt;
                 if (boss.wingTimer > 0.11) { boss.wingTimer = 0; boss.wing = (boss.wing + 1) % 3; }
+
+                // Boss grows bigger approaching ray phase (last 10 seconds of phase 1)
+                const growStart = BOSS_RAY_PHASE_AT - 10;
+                if (bossPhase === 1 && bossTime >= growStart) {
+                    const growProgress = Math.min(1, (bossTime - growStart) / 10);
+                    boss.targetScale = 1.0 + growProgress * 0.45; // grows up to 1.45x
+                }
+                boss.scale += (boss.targetScale - boss.scale) * dt * 2.5;
 
                 // A los 60s: empieza la fase de rayos
                 if (bossTime >= BOSS_RAY_PHASE_AT && bossPhase === 1) {
@@ -1113,6 +1143,8 @@
                     pipesFadingOut = true;
                     screenShake = 0.85;
                     sfx.bossRoar();
+                    // After a brief moment, allow new pipes with wide gaps
+                    setTimeout(() => { pipesFadingOut = false; }, 2500);
                 }
 
                 // Spawnear rayos durante phase 2
@@ -1455,15 +1487,16 @@
 
     function drawBoss() {
         if (!bossActive && state !== STATE.WIN) return;
-        const sw = BOSS_SPRITE_W * BOSS_PIXEL;
-        const sh = BOSS_SPRITE_H * BOSS_PIXEL;
+        const sc = state === STATE.WIN ? 1.0 : boss.scale;
+        const sw = BOSS_SPRITE_W * BOSS_PIXEL * sc;
+        const sh = BOSS_SPRITE_H * BOSS_PIXEL * sc;
         // Animación de entrada: aparece desde la derecha
         const entrance = Math.min(1, bossEntranceTimer);
         const ease = 1 - Math.pow(1 - entrance, 3);
         const drawX = state === STATE.WIN ? boss.x : (W + sw) - ease * ((W + sw) - boss.x);
 
         ctx.save();
-        // Aura roja pulsante
+        // Aura roja pulsante (scales with boss)
         const auraPulse = 0.6 + Math.sin(performance.now() / 250) * 0.2;
         const auraR = sw * 0.85 * auraPulse;
         const aura = ctx.createRadialGradient(drawX, boss.y, 10, drawX, boss.y, auraR);
@@ -1476,10 +1509,10 @@
         // Sombra debajo del jefe
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.beginPath();
-        ctx.ellipse(drawX, boss.y + sh * 0.4, sw * 0.4, 8, 0, 0, Math.PI * 2);
+        ctx.ellipse(drawX, boss.y + sh * 0.4, sw * 0.4, 8 * sc, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Sprite del jefe
+        // Sprite del jefe (scaled)
         ctx.drawImage(bossFrames[boss.wing], drawX - sw / 2, boss.y - sh / 2, sw, sh);
 
         // Brillo en los ojos cuando está cargando un rayo
@@ -1668,7 +1701,7 @@
         if (state === STATE.PLAYING || state === STATE.DEAD) {
             drawScore(score, W / 2, 80, 64);
         } else if (state === STATE.BOSS) {
-            // Mostrar BOSS FIGHT y barra de tiempo restante en lugar del score
+            // Mostrar BOSS FIGHT y barra de tiempo restante
             const remaining = Math.max(0, BOSS_FIGHT_DURATION - bossTime);
             const mm = Math.floor(remaining / 60);
             const ss = Math.floor(remaining % 60);
@@ -1692,11 +1725,13 @@
             ctx.fill();
             // Tiempo restante
             drawTextWithShadow(timeStr, W / 2, by + barH / 2 + 28, 22, '#ffffff');
+            // Score keeps showing during boss fight
+            drawScore(score, W / 2, by + barH / 2 + 62, 40);
             // Aviso "RAYOS!" cuando entra phase 2
             if (bossPhase === 2) {
                 const pulse = (Math.sin(performance.now() / 120) + 1) / 2;
                 ctx.globalAlpha = 0.65 + pulse * 0.35;
-                drawTextWithShadow('¡ESQUIVA LOS RAYOS!', W / 2, 130, 26, '#ff5160');
+                drawTextWithShadow('¡ESQUIVA LOS RAYOS!', W / 2, by + barH / 2 + 105, 26, '#ff5160');
                 ctx.globalAlpha = 1;
             }
         }
@@ -1881,10 +1916,12 @@
 
     function drawMedal(cx, cy, sc) {
         let inner, outer, label;
-        if (sc >= 30)      { outer = '#b9f2ff'; inner = '#7fe3ff'; label = 'PLATINO'; }
-        else if (sc >= 20) { outer = '#ffd34d'; inner = '#f5b800'; label = 'ORO'; }
-        else if (sc >= 10) { outer = '#dadada'; inner = '#a4a4a4'; label = 'PLATA'; }
-        else if (sc >= 5)  { outer = '#d49a5b'; inner = '#a16828'; label = 'BRONCE'; }
+        if (sc >= 60)      { outer = '#b9f2ff'; inner = '#7fe3ff'; label = 'PLATINO'; }
+        else if (sc >= 40) { outer = '#c8a2ff'; inner = '#9b6dd7'; label = 'DIAMANTE'; }
+        else if (sc >= 30) { outer = '#ffd34d'; inner = '#f5b800'; label = 'ORO'; }
+        else if (sc >= 20) { outer = '#dadada'; inner = '#a4a4a4'; label = 'PLATA'; }
+        else if (sc >= 10) { outer = '#d49a5b'; inner = '#a16828'; label = 'BRONCE'; }
+        else if (sc >= 5)  { outer = '#8a8a8a'; inner = '#5c5c5c'; label = 'HIERRO'; }
         else               { return; }
 
         ctx.save();
