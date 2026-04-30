@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -c \"C:/Users/CrisPC/Documents/Flappy birds/game.js\")",
+      "PowerShell(node -c \"C:\\\\Users\\\\CrisPC\\\\Documents\\\\Flappy birds\\\\game.js\" 2>&1)",
+      "Bash(awk 'BEGIN{c=0} {for\\(i=1;i<=length\\($0\\);i++\\){ch=substr\\($0,i,1\\); if\\(ch==\"{\"\\)c++; if\\(ch==\"}\"\\)c--}} END{print \"balance:\",c}' \"C:/Users/CrisPC/Documents/Flappy birds/game.js\")",
+      "PowerShell($tools = @{}; foreach \\($t in 'node','npm','java','javac','gradle','electron','python','git'\\) { $cmd = Get-Command $t -ErrorAction SilentlyContinue; if \\($cmd\\) { $v = \\(& $cmd --version 2>&1 | Select-Object -First 1\\); $tools[$t] = \"$\\($cmd.Source\\) -> $v\" } else { $tools[$t] = 'NO INSTALADO' } }; $tools.GetEnumerator\\(\\) | Sort-Object Name | Format-Table -AutoSize)",
+      "PowerShell($paths = @\\(\"$env:LOCALAPPDATA\\\\Programs\\\\nodejs\", \"$env:ProgramFiles\\\\nodejs\", \"$env:ProgramFiles\\(x86\\)\\\\nodejs\", \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\", \"$env:ProgramFiles\\\\Android\\\\Android Studio\", \"$env:APPDATA\\\\npm\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { Write-Output \"EXISTE: $p\" } else { Write-Output \"no: $p\" } })"
+    ]
+  }
+}

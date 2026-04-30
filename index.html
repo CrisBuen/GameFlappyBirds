@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#4ec0ca" />
+    <title>Flappy Bird</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="game-wrapper">
+        <canvas id="game" width="480" height="720"></canvas>
+        <div id="hud">
+            <div id="fps"></div>
+        </div>
+
+        <!-- Music control button (top-left) -->
+        <button id="music-toggle" title="Música" aria-label="Abrir control de música">
+            <svg id="music-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                <path id="music-path" fill="currentColor" d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+            </svg>
+        </button>
+
+        <!-- Volume panel -->
+        <div id="volume-panel" class="hidden">
+            <div class="vp-row">
+                <span class="vp-label">Música</span>
+                <button id="mute-btn" class="vp-mini" title="Silenciar">🔊</button>
+            </div>
+            <div class="vp-row">
+                <button id="vol-down" class="vp-btn" aria-label="Bajar volumen">−</button>
+                <input id="vol-slider" type="range" min="0" max="100" step="1" value="20" />
+                <button id="vol-up" class="vp-btn" aria-label="Subir volumen">+</button>
+            </div>
+            <div class="vp-row vp-readout">
+                <span id="vol-value">20%</span>
+            </div>
+            <div class="vp-row">
+                <button id="play-music-btn" class="vp-play-btn">▶ Reproducir música</button>
+            </div>
+            <div id="music-status" class="vp-status"></div>
+        </div>
+    </div>
+
+    <!-- Audio elements: src/loop/play se manejan desde JS. Sin crossorigin (rompe con file://). -->
+    <audio id="bg-music" preload="auto" loop></audio>
+    <audio id="boss-music" preload="auto" loop></audio>
+
+    <script src="game.js"></script>
+</body>
+</html>

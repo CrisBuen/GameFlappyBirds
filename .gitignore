@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+android/app/build/
+android/build/
+android/capacitor-cordova-android-plugins/build/
+android/.gradle/
+*.apk
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Capacitor generated (can be regenerated)
+www/
+
+# Local config (contains machine-specific paths)
+android/local.properties
+
+# Gradle caches
+.gradle/
+
+# Node installer (not part of the game)
+assets/node-v24.15.0-x64.msi
