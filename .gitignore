@@ -1,6 +1,12 @@
 # Dependencies
 node_modules/
 
+# Keystore (NEVER commit this!)
+keystore/
+*.keystore
+*.jks
+android/keystore.properties
+
 # Build outputs
 android/app/build/
 android/build/
@@ -28,3 +34,4 @@ android/local.properties
 
 # Node installer (not part of the game)
 assets/node-v24.15.0-x64.msi
+*.aab
