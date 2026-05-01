@@ -22,6 +22,13 @@
             </svg>
         </button>
 
+        <!-- Settings button (top-right) -->
+        <button id="settings-toggle" title="Ajustes" aria-label="Abrir ajustes">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                <path fill="currentColor" d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a7.8 7.8 0 0 0-2.6-1.5L14 2h-4l-.4 2.5A7.8 7.8 0 0 0 7 6L4.6 5l-2 3.5 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a7.8 7.8 0 0 0 2.6 1.5L10 22h4l.4-2.5A7.8 7.8 0 0 0 17 18l2.4 1 2-3.5-2-1.5zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"/>
+            </svg>
+        </button>
+
         <!-- Volume panel -->
         <div id="volume-panel" class="hidden">
             <div class="vp-row">
@@ -40,6 +47,20 @@
                 <button id="play-music-btn" class="vp-play-btn">▶ Reproducir música</button>
             </div>
             <div id="music-status" class="vp-status"></div>
+        </div>
+
+        <!-- Settings panel -->
+        <div id="settings-panel" class="hidden">
+            <div class="vp-row">
+                <span class="vp-label">FPS</span>
+                <span id="fps-value" class="vp-value">60</span>
+            </div>
+            <div id="fps-options" class="fps-options">
+                <button data-fps="30">30</button>
+                <button data-fps="60">60</button>
+                <button data-fps="90">90</button>
+                <button data-fps="120">120</button>
+            </div>
         </div>
     </div>
 

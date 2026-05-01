@@ -6,7 +6,7 @@
     const ctx = canvas.getContext('2d');
 
     // Calculate logical game dimensions from actual screen size
-    const _dpr = window.devicePixelRatio || 1;
+    const _dpr = Math.min(window.devicePixelRatio || 1, 2);
     const _wrapper = document.getElementById('game-wrapper');
     const _cssW = _wrapper.clientWidth  || window.innerWidth;
     const _cssH = _wrapper.clientHeight || window.innerHeight;
@@ -36,6 +36,7 @@
     const _hRatio = H / 720;
     const PIPE_GAP = Math.round(165 * _hRatio);
     const PIPE_WIDTH = 72;
+    const BOSS_RAY_PIPE_WIDTH = 112;
     const PIPE_INTERVAL = 1.45;
     const _pipeMargin = Math.round(80 * _hRatio);
     const PIPE_MIN_TOP = _pipeMargin;
@@ -45,10 +46,16 @@
     const BIRD_HITBOX_R = 13;
 
     // ---------- Boss / endgame thresholds ----------
-    const BOSS_MUSIC_SCORE = 70;     // a partir de 70 puntos: cambia la música
-    const BOSS_FIGHT_SCORE = 120;    // a partir de 120 puntos: comienza la pelea
-    const BOSS_FIGHT_DURATION = 90;  // 1:30 minuto
-    const BOSS_RAY_PHASE_AT = 60;    // en el segundo 60 los tubos desaparecen
+    const PIPE_ANIMATION_SCORE = 120; // de 120 a 150: tubos animados facil/intermedio
+    const BOSS_MUSIC_SCORE = 150;     // la musica del jefe entra junto con el jefe
+    const BOSS_FIGHT_SCORE = 150;     // a partir de 150 puntos: comienza la pelea
+    const BOSS_FIGHT_DURATION = 90;   // 1:30 minuto
+    const BOSS_RAY_PHASE_AT = 60;     // minuto 1: empieza la fase de rayos
+    const BOSS_PIPE_FADE_BEFORE_RAYS = 3;
+    const BOSS_RAY_SCALE = 2.25;
+    const DAY_CYCLE_STAGE_DURATION = 15;
+    const DAY_CYCLE_DURATION = DAY_CYCLE_STAGE_DURATION * 4;
+    const DAY_CYCLE_TRANSITION = 1.4;
 
     // ---------- State ----------
     const STATE = { READY: 0, PLAYING: 1, DEAD: 2, GAMEOVER: 3, BOSS: 4, WIN: 5 };
@@ -61,7 +68,8 @@
     let bossMusicSwitched = false;
     let bossEntranceTimer = 0; // animación de entrada (0..1)
     let pipesFadingOut = false;
-    let rays = [];             // {y, telegraphTime, fireTime, age, phase}
+    let bossPipeFadeStarted = false;
+    let rays = [];             // {sx, sy, ex, ey, telegraphTime, fireTime, age, phase}
     let raySpawnTimer = 0;
     let screenShake = 0;
     let winTimer = 0;
@@ -93,7 +101,8 @@
     let starsOffset = 0;
     let gameOverTimer = 0;
     let flashAlpha = 0;
-    let isNight = Math.random() < 0.3; // 30% chance night theme per session
+    let isNight = Math.random() < 0.3; // 30% chance night theme per run
+    let dayCyclePhase = isNight ? DAY_CYCLE_STAGE_DURATION * 2 : 0;
 
     // Bird
     const bird = {
@@ -380,9 +389,9 @@
     const pipeSprite = buildPipeSprite();
 
     // ---------- Pixel-art boss sprite ----------
-    // Sprite 28x24 dibujado con primitivas, 3 frames de aleteo. Renderizado a 4x.
-    const BOSS_SPRITE_W = 28;
-    const BOSS_SPRITE_H = 24;
+    // Sprite pixel-art dibujado con primitivas, 3 frames de aleteo. Renderizado a 4x.
+    const BOSS_SPRITE_W = 32;
+    const BOSS_SPRITE_H = 28;
     const BOSS_PIXEL = 4;
 
     function drawBossSprite(wingFrame) {
@@ -539,6 +548,45 @@
             x.fillRect(19, 14, 1, 6); x.fillRect(20, 13, 6, 1);
             x.fillRect(26, 14, 1, 7); x.fillRect(20, 21, 7, 1);
         }
+
+        // ---- Rediseño: cola, espinas y talones para hacerlo mas imponente ----
+        x.fillStyle = K;
+        x.fillRect(25, 10, 4, 2);
+        x.fillRect(27, 12, 4, 2);
+        x.fillRect(28, 14, 3, 2);
+        x.fillRect(29, 16, 2, 2);
+        x.fillStyle = D1;
+        x.fillRect(25, 11, 3, 1);
+        x.fillRect(27, 13, 3, 1);
+        x.fillRect(28, 15, 2, 1);
+
+        // Espinas dorsales.
+        x.fillStyle = K;
+        x.fillRect(22, 4, 2, 2);
+        x.fillRect(24, 7, 2, 2);
+        x.fillRect(24, 17, 2, 2);
+        x.fillStyle = D4;
+        x.fillRect(23, 4, 1, 1);
+        x.fillRect(25, 7, 1, 1);
+        x.fillRect(25, 17, 1, 1);
+
+        // Nucleo/pechera brillante.
+        x.fillStyle = K;
+        x.fillRect(13, 12, 5, 5);
+        x.fillStyle = '#7f1d9b';
+        x.fillRect(14, 13, 3, 3);
+        x.fillStyle = '#e864ff';
+        x.fillRect(15, 13, 1, 1);
+
+        // Talones.
+        x.fillStyle = K;
+        x.fillRect(10, 21, 2, 3);
+        x.fillRect(16, 21, 2, 3);
+        x.fillRect(9, 24, 4, 1);
+        x.fillRect(15, 24, 4, 1);
+        x.fillStyle = HORN;
+        x.fillRect(10, 23, 2, 1);
+        x.fillRect(16, 23, 2, 1);
 
         return off.canvas;
     }
@@ -697,6 +745,7 @@
 
     // Generic blip with optional pitch sweep + tremolo
     function blip(freq, dur, type = 'square', vol = 0.2, sweepTo = null, attack = 0.005) {
+        if (!audioCtx || audioCtx.state === 'suspended') ensureAudio();
         if (!audioCtx) return;
         const t0 = audioCtx.currentTime;
         const osc = audioCtx.createOscillator();
@@ -716,6 +765,7 @@
 
     // Noise burst (for thump/hit)
     function noise(dur, vol = 0.2, lpFreq = 1200) {
+        if (!audioCtx || audioCtx.state === 'suspended') ensureAudio();
         if (!audioCtx) return;
         const t0 = audioCtx.currentTime;
         const bufSize = Math.floor(audioCtx.sampleRate * dur);
@@ -736,41 +786,49 @@
 
     const sfx = {
         flap:  () => {
+            ensureAudio();
             // Quick rising chirp
             blip(720, 0.07, 'square', 0.15, 1100);
             setTimeout(() => blip(540, 0.06, 'triangle', 0.10, 380), 30);
         },
         score: () => {
+            ensureAudio();
             // 2-note arpeggio
-            blip(880, 0.08, 'square', 0.18);
-            setTimeout(() => blip(1320, 0.10, 'square', 0.18), 70);
+            blip(1040, 0.075, 'square', 0.22);
+            setTimeout(() => blip(1560, 0.09, 'square', 0.20), 65);
         },
         hit:   () => {
+            ensureAudio();
             // Thud + low square
             noise(0.18, 0.35, 800);
             blip(110, 0.16, 'sawtooth', 0.22, 70);
         },
         die:   () => {
+            ensureAudio();
             // Falling tone
             blip(440, 0.55, 'triangle', 0.22, 60);
         },
-        swoop: () => blip(660, 0.18, 'sine', 0.15, 280),
+        swoop: () => { ensureAudio(); blip(660, 0.18, 'sine', 0.15, 280); },
         bossRoar: () => {
+            ensureAudio();
             // Rugido grave del jefe
-            blip(120, 0.6, 'sawtooth', 0.32, 60);
-            blip(180, 0.55, 'square', 0.18, 90);
-            setTimeout(() => noise(0.35, 0.35, 600), 100);
+            blip(95, 0.75, 'sawtooth', 0.36, 45);
+            blip(155, 0.65, 'square', 0.22, 75);
+            setTimeout(() => noise(0.42, 0.42, 560), 90);
         },
         rayCharge: () => {
+            ensureAudio();
             // Carga ascendente
-            blip(220, 0.45, 'sawtooth', 0.20, 880);
+            blip(220, 0.48, 'sawtooth', 0.24, 980);
         },
         rayFire: () => {
+            ensureAudio();
             // Disparo del rayo
-            blip(880, 0.25, 'sawtooth', 0.30, 220);
-            noise(0.18, 0.20, 3000);
+            blip(980, 0.28, 'sawtooth', 0.34, 180);
+            noise(0.22, 0.26, 3200);
         },
         win: () => {
+            ensureAudio();
             // Fanfarria de victoria
             const notes = [523, 659, 784, 1047]; // C5 E5 G5 C6
             notes.forEach((f, i) => setTimeout(() => blip(f, 0.18, 'square', 0.22), i * 110));
@@ -821,6 +879,14 @@
     const muteBtn = document.getElementById('mute-btn');
     const playMusicBtn = document.getElementById('play-music-btn');
     const musicStatus = document.getElementById('music-status');
+    const settingsToggleBtn = document.getElementById('settings-toggle');
+    const settingsPanel = document.getElementById('settings-panel');
+    const fpsValue = document.getElementById('fps-value');
+    const fpsOptionButtons = Array.from(document.querySelectorAll('#fps-options button'));
+
+    const FPS_OPTIONS = [30, 60, 90, 120];
+    let targetFps = parseInt(localStorage.getItem('flappy_target_fps') || '60', 10);
+    if (!FPS_OPTIONS.includes(targetFps)) targetFps = 60;
 
     function updateVolumeUI() {
         volSlider.value = String(musicVolume);
@@ -853,6 +919,14 @@
     }
     updateVolumeUI();
 
+    function updateSettingsUI() {
+        fpsValue.textContent = String(targetFps);
+        for (const btn of fpsOptionButtons) {
+            btn.classList.toggle('selected', parseInt(btn.dataset.fps, 10) === targetFps);
+        }
+    }
+    updateSettingsUI();
+
     function setVolume(v) {
         musicVolume = Math.max(0, Math.min(100, Math.round(v)));
         localStorage.setItem('flappy_music_volume', String(musicVolume));
@@ -875,6 +949,19 @@
 
     function togglePanel() {
         volumePanel.classList.toggle('hidden');
+        settingsPanel.classList.add('hidden');
+    }
+
+    function toggleSettingsPanel() {
+        settingsPanel.classList.toggle('hidden');
+        volumePanel.classList.add('hidden');
+    }
+
+    function setTargetFps(fps) {
+        if (!FPS_OPTIONS.includes(fps)) return;
+        targetFps = fps;
+        localStorage.setItem('flappy_target_fps', String(targetFps));
+        updateSettingsUI();
     }
 
     musicToggleBtn.addEventListener('click', e => {
@@ -884,6 +971,18 @@
         if (!musicPlaying && !musicMuted) startMusic();
         togglePanel();
     });
+
+    settingsToggleBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        toggleSettingsPanel();
+    });
+
+    for (const btn of fpsOptionButtons) {
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            setTargetFps(parseInt(btn.dataset.fps, 10));
+        });
+    }
 
     volSlider.addEventListener('input', e => setVolume(parseInt(e.target.value, 10)));
     volUpBtn.addEventListener('click', e => { e.stopPropagation(); setVolume(musicVolume + 10); });
@@ -914,6 +1013,9 @@
     volumePanel.addEventListener('mousedown', e => e.stopPropagation());
     volumePanel.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
     volumePanel.addEventListener('click', e => e.stopPropagation());
+    settingsPanel.addEventListener('mousedown', e => e.stopPropagation());
+    settingsPanel.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+    settingsPanel.addEventListener('click', e => e.stopPropagation());
 
     // Click outside the panel closes it
     document.addEventListener('click', e => {
@@ -922,6 +1024,11 @@
             e.target !== musicToggleBtn) {
             volumePanel.classList.add('hidden');
         }
+        if (!settingsPanel.classList.contains('hidden') &&
+            !settingsPanel.contains(e.target) &&
+            e.target !== settingsToggleBtn) {
+            settingsPanel.classList.add('hidden');
+        }
     });
 
     function resetGame() {
@@ -929,6 +1036,7 @@
         score = 0;
         pipes = [];
         spawnTimer = 0;
+        bird.x = BIRD_X;
         bird.y = H * 0.45;
         bird.vy = 0;
         bird.rotation = 0;
@@ -936,6 +1044,7 @@
         flashAlpha = 0;
         bird.color = SKIN_KEYS[Math.floor(Math.random() * SKIN_KEYS.length)];
         isNight = Math.random() < 0.3;
+        dayCyclePhase = isNight ? DAY_CYCLE_STAGE_DURATION * 2 : 0;
         rebuildBirdSprites();
         // Reset boss state
         bossActive = false;
@@ -944,6 +1053,7 @@
         bossMusicSwitched = false;
         bossEntranceTimer = 0;
         pipesFadingOut = false;
+        bossPipeFadeStarted = false;
         rays = [];
         raySpawnTimer = 0;
         screenShake = 0;
@@ -962,21 +1072,112 @@
         }
     }
 
+    function clamp01(v) {
+        return Math.max(0, Math.min(1, v));
+    }
+
+    function smoothstep(edge0, edge1, x) {
+        const t = clamp01((x - edge0) / (edge1 - edge0));
+        return t * t * (3 - 2 * t);
+    }
+
+    function hexToRgb(hex) {
+        const n = parseInt(hex.slice(1), 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+
+    function mixHex(a, b, t) {
+        const ar = hexToRgb(a);
+        const br = hexToRgb(b);
+        const out = ar.map((v, i) => Math.round(v + (br[i] - v) * t));
+        return 'rgb(' + out[0] + ',' + out[1] + ',' + out[2] + ')';
+    }
+
+    function cycleStage() {
+        return (dayCyclePhase / DAY_CYCLE_STAGE_DURATION) % 4;
+    }
+
+    function cycleInfo() {
+        const t = ((dayCyclePhase % DAY_CYCLE_DURATION) + DAY_CYCLE_DURATION) % DAY_CYCLE_DURATION;
+        const stage = Math.floor(t / DAY_CYCLE_STAGE_DURATION) % 4;
+        const elapsed = t - stage * DAY_CYCLE_STAGE_DURATION;
+        const next = (stage + 1) % 4;
+        const transitionStart = DAY_CYCLE_STAGE_DURATION - DAY_CYCLE_TRANSITION;
+        if (elapsed >= transitionStart) {
+            return {
+                from: stage,
+                to: next,
+                blend: smoothstep(transitionStart, DAY_CYCLE_STAGE_DURATION, elapsed)
+            };
+        }
+        return { from: stage, to: stage, blend: 1 };
+    }
+
+    function cycleLevel(stageIndex) {
+        const c = cycleInfo();
+        let v = 0;
+        if (c.from === stageIndex) v += 1 - c.blend;
+        if (c.to === stageIndex) v += c.blend;
+        return clamp01(v);
+    }
+
+    function distancePointToSegment(px0, py0, x1, y1, x2, y2) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len2 = dx * dx + dy * dy;
+        if (len2 === 0) return Math.hypot(px0 - x1, py0 - y1);
+        const t = clamp01(((px0 - x1) * dx + (py0 - y1) * dy) / len2);
+        const lx = x1 + t * dx;
+        const ly = y1 + t * dy;
+        return Math.hypot(px0 - lx, py0 - ly);
+    }
+
+    function nightLevel() {
+        return cycleLevel(2);
+    }
+
+    function duskLevel() {
+        return cycleLevel(1);
+    }
+
+    function dawnLevel() {
+        return cycleLevel(3);
+    }
+
     // ---------- Update ----------
+    function getPipeWidth(p) {
+        return p && p.width ? p.width : PIPE_WIDTH;
+    }
+
+    function isPipeAnimationActive() {
+        return score >= PIPE_ANIMATION_SCORE || state === STATE.BOSS;
+    }
+
+    function pipeDifficulty01() {
+        if (state === STATE.BOSS) return 1;
+        if (score < PIPE_ANIMATION_SCORE) return 0;
+        return Math.min(1, (score - PIPE_ANIMATION_SCORE) / (BOSS_FIGHT_SCORE - PIPE_ANIMATION_SCORE));
+    }
+
     function spawnPipe() {
-        // Durante phase 1 del jefe los tubos varían de tamaño / hueco
+        // Desde 120 puntos los tubos empiezan a animarse. En fase de rayos son mas anchos.
         let gap = PIPE_GAP;
+        let width = PIPE_WIDTH;
+        const difficulty = pipeDifficulty01();
         if (state === STATE.BOSS && bossPhase === 1) {
-            gap = Math.round((165 + Math.random() * 40) * _hRatio); // wider gap during boss
+            gap = Math.round((178 + Math.random() * 44) * _hRatio);
         } else if (state === STATE.BOSS && bossPhase === 2) {
-            // During ray phase: very wide gaps so player can dodge rays
+            width = BOSS_RAY_PIPE_WIDTH;
             gap = Math.round(280 * _hRatio);
+        } else if (difficulty > 0) {
+            gap = Math.round((190 - difficulty * 25 + Math.random() * 30) * _hRatio);
         }
         const minTop = _pipeMargin;
         const maxTop = GROUND_Y - gap - _pipeMargin;
         const topHeight = minTop + Math.random() * Math.max(20, maxTop - minTop);
         pipes.push({
             x: W + 20,
+            width: width,
             top: topHeight,
             bottom: topHeight + gap,
             baseTop: topHeight,
@@ -989,11 +1190,20 @@
 
     function spawnRay() {
         const margin = 70;
-        // El rayo apunta a una Y y atraviesa la pantalla horizontalmente
-        const y = margin + Math.random() * (GROUND_Y - margin * 2);
+        const sc = boss.scale;
+        const sw = BOSS_SPRITE_W * BOSS_PIXEL * sc;
+        const sh = BOSS_SPRITE_H * BOSS_PIXEL * sc;
+        const aimedY = bird.y + (Math.random() - 0.5) * 140;
+        const minBossY = boss.y - sh * 0.34;
+        const maxBossY = boss.y + sh * 0.34;
+        const y = Math.max(margin, Math.min(GROUND_Y - margin, Math.max(minBossY, Math.min(maxBossY, aimedY))));
+        const sx = boss.x - sw * 0.46;
         rays.push({
-            y: y,
-            telegraphTime: 0.85,
+            sx: sx,
+            sy: y,
+            ex: -30,
+            ey: y,
+            telegraphTime: 0.75,
             fireTime: 0.32,
             age: 0,
             phase: 0  // 0 telegraph, 1 firing, 2 dead
@@ -1028,6 +1238,8 @@
             cityOffset += 18 * dt;
             bushOffset += 50 * dt;
             starsOffset += 2 * dt;
+            dayCyclePhase = (dayCyclePhase + dt) % DAY_CYCLE_DURATION;
+            isNight = nightLevel() > 0.55;
         }
 
         if (screenShake > 0) screenShake = Math.max(0, screenShake - dt * 1.6);
@@ -1043,19 +1255,22 @@
         }
 
         if (state === STATE.PLAYING || state === STATE.BOSS) {
-            // Trigger música del jefe a 70 puntos
+            // Trigger musica del jefe junto con la aparicion del jefe.
             if (!bossMusicSwitched && score >= BOSS_MUSIC_SCORE && currentTrack === 'main' && musicPlaying) {
                 bossMusicSwitched = true;
                 crossfadeTo('boss', 1500);
             }
 
-            // Trigger pelea del jefe a 120 puntos
+            // Trigger pelea del jefe a 150 puntos.
             if (state === STATE.PLAYING && score >= BOSS_FIGHT_SCORE) {
                 state = STATE.BOSS;
                 bossActive = true;
                 bossTime = 0;
                 bossPhase = 1;
                 bossEntranceTimer = 0;
+                bossPipeFadeStarted = false;
+                pipesFadingOut = false;
+                raySpawnTimer = 0.5;
                 screenShake = 1.0;
                 sfx.bossRoar();
                 if (currentTrack !== 'boss' && musicPlaying) crossfadeTo('boss', 800);
@@ -1067,7 +1282,8 @@
                 (state === STATE.BOSS && !pipesFadingOut);
             if (allowSpawn) {
                 spawnTimer += dt;
-                const interval = state === STATE.BOSS ? PIPE_INTERVAL * 0.85 : PIPE_INTERVAL;
+                const difficulty = pipeDifficulty01();
+                const interval = state === STATE.BOSS ? PIPE_INTERVAL * 0.88 : PIPE_INTERVAL * (1 - difficulty * 0.12);
                 if (spawnTimer >= interval) {
                     spawnTimer = 0;
                     spawnPipe();
@@ -1077,25 +1293,27 @@
             // Movimiento + score + animación de tubos
             for (const p of pipes) {
                 p.x -= PIPE_SPEED * dt;
-                if ((state === STATE.PLAYING || state === STATE.BOSS) && !p.scored && p.x + PIPE_WIDTH < bird.x - BIRD_HITBOX_R) {
+                const pWidth = getPipeWidth(p);
+                if ((state === STATE.PLAYING || state === STATE.BOSS) && !p.scored && p.x + pWidth < bird.x - BIRD_HITBOX_R) {
                     p.scored = true;
                     score++;
                     sfx.score();
                 }
-                if (state === STATE.BOSS && bossPhase === 1 && !pipesFadingOut) {
-                    // Pulsación: el hueco respira (los tubos crecen y se encogen)
-                    p.pulse += dt * 2.5;
-                    const breath = Math.sin(p.pulse) * 18;
+                if (isPipeAnimationActive() && !(state === STATE.BOSS && bossPhase === 2) && !pipesFadingOut) {
+                    // Pulsacion: el hueco respira. De 120 a 150 sube gradualmente.
+                    const difficulty = pipeDifficulty01();
+                    p.pulse += dt * (1.8 + difficulty * 0.9);
+                    const breath = Math.sin(p.pulse) * (8 + difficulty * 14);
                     p.top = p.baseTop - breath;
                     p.bottom = p.baseTop + p.baseGap + breath;
                 }
                 if (pipesFadingOut) {
-                    p.fadeOut = Math.max(0, p.fadeOut - dt * 0.7);
+                    p.fadeOut = Math.max(0, p.fadeOut - dt * 0.95);
                 }
             }
             pipes = pipes.filter(p => {
                 if (p.fadeOut !== undefined && p.fadeOut <= 0) return false;
-                return p.x + PIPE_WIDTH > -10;
+                return p.x + getPipeWidth(p) > -10;
             });
 
             // Física del pájaro
@@ -1116,35 +1334,52 @@
                     bossTime += dt;
                 }
 
-                // Boss movement: sways left-right and bobs up-down
+                // Boss movement: sways during charge; in ray phase it becomes a huge launcher on the right.
                 boss.bobPhase += dt * 1.4;
                 boss.movePhase += dt * 0.6;
-                const moveRangeX = 60; // horizontal sway
-                const moveRangeY = 55; // vertical bob
-                boss.x = boss.baseX + Math.sin(boss.movePhase) * moveRangeX;
-                boss.y = boss.baseY + Math.sin(boss.bobPhase) * moveRangeY;
+                if (bossPhase === 2) {
+                    const anchorX = W - 18;
+                    const anchorY = H * 0.42;
+                    const targetX = anchorX + Math.sin(boss.movePhase * 2.8) * 8;
+                    const targetY = anchorY + Math.sin(boss.bobPhase * 2.2) * 16;
+                    boss.x += (targetX - boss.x) * Math.min(1, dt * 4.0);
+                    boss.y += (targetY - boss.y) * Math.min(1, dt * 3.4);
+                } else {
+                    const moveRangeX = 60; // horizontal sway
+                    const moveRangeY = 55; // vertical bob
+                    boss.x = boss.baseX + Math.sin(boss.movePhase) * moveRangeX;
+                    boss.y = boss.baseY + Math.sin(boss.bobPhase) * moveRangeY;
+                }
                 // Keep boss from overlapping the bird area
                 if (boss.x < W * 0.55) boss.x = W * 0.55;
 
                 boss.wingTimer += dt;
-                if (boss.wingTimer > 0.11) { boss.wingTimer = 0; boss.wing = (boss.wing + 1) % 3; }
+                const bossWingSpeed = bossPhase === 2 ? 0.075 : 0.11;
+                if (boss.wingTimer > bossWingSpeed) { boss.wingTimer = 0; boss.wing = (boss.wing + 1) % 3; }
 
-                // Boss grows bigger approaching ray phase (last 10 seconds of phase 1)
-                const growStart = BOSS_RAY_PHASE_AT - 10;
-                if (bossPhase === 1 && bossTime >= growStart) {
-                    const growProgress = Math.min(1, (bossTime - growStart) / 10);
-                    boss.targetScale = 1.0 + growProgress * 0.45; // grows up to 1.45x
-                }
+                // Boss crece desde el segundo 0 hasta el minuto 1.
+                const growProgress = Math.min(1, bossTime / BOSS_RAY_PHASE_AT);
+                boss.targetScale = 1.0 + growProgress * (BOSS_RAY_SCALE - 1.0);
                 boss.scale += (boss.targetScale - boss.scale) * dt * 2.5;
 
-                // A los 60s: empieza la fase de rayos
+                // Tres segundos antes de los rayos desaparece la animacion de tubos.
+                if (
+                    bossPhase === 1 &&
+                    !bossPipeFadeStarted &&
+                    bossTime >= BOSS_RAY_PHASE_AT - BOSS_PIPE_FADE_BEFORE_RAYS
+                ) {
+                    bossPipeFadeStarted = true;
+                    pipesFadingOut = true;
+                }
+
+                // A los 60s: empieza la fase de rayos con tubos mas anchos.
                 if (bossTime >= BOSS_RAY_PHASE_AT && bossPhase === 1) {
                     bossPhase = 2;
-                    pipesFadingOut = true;
+                    pipesFadingOut = false;
+                    spawnTimer = PIPE_INTERVAL;
+                    raySpawnTimer = 0.7;
                     screenShake = 0.85;
                     sfx.bossRoar();
-                    // After a brief moment, allow new pipes with wide gaps
-                    setTimeout(() => { pipesFadingOut = false; }, 2500);
                 }
 
                 // Spawnear rayos durante phase 2
@@ -1174,6 +1409,8 @@
                 if (bossTime >= BOSS_FIGHT_DURATION) {
                     state = STATE.WIN;
                     winTimer = 0;
+                    pipes = [];
+                    rays = [];
                     spawnConfetti();
                     sfx.win();
                     if (score > bestScore) {
@@ -1194,9 +1431,10 @@
                 for (const p of pipes) {
                     // Cuando el tubo empieza a desvanecerse, ya no es sólido
                     if (p.fadeOut !== undefined && p.fadeOut < 0.6) continue;
+                    const pWidth = getPipeWidth(p);
                     if (
                         bird.x + BIRD_HITBOX_R > p.x &&
-                        bird.x - BIRD_HITBOX_R < p.x + PIPE_WIDTH &&
+                        bird.x - BIRD_HITBOX_R < p.x + pWidth &&
                         (bird.y - BIRD_HITBOX_R < p.top || bird.y + BIRD_HITBOX_R > p.bottom)
                     ) {
                         killBird();
@@ -1206,7 +1444,7 @@
                 // Rayos durante fase 2
                 for (const r of rays) {
                     if (r.phase !== 1) continue;
-                    if (Math.abs(bird.y - r.y) < BIRD_HITBOX_R + 8) {
+                    if (distancePointToSegment(bird.x, bird.y, r.sx, r.sy, r.ex, r.ey) < BIRD_HITBOX_R + 9) {
                         killBird();
                         break;
                     }
@@ -1230,16 +1468,18 @@
             }
         } else if (state === STATE.WIN) {
             winTimer += dt;
-            // El pájaro vuela hacia arriba en celebración
-            if (winTimer < 1.4) {
+            // El pajaro celebra y luego avanza hacia el desierto.
+            if (winTimer < 1.1) {
                 bird.vy += -800 * dt;
                 bird.y += bird.vy * dt;
                 bird.rotation = -0.4;
             } else {
                 bird.bobTimer += dt;
-                bird.y = H * 0.4 + Math.sin(bird.bobTimer * 3) * 8;
+                const travel = clamp01((winTimer - 1.1) / 2.2);
+                bird.x += ((W * 0.58) - bird.x) * dt * 1.7;
+                bird.y = (H * (0.38 + travel * 0.05)) + Math.sin(bird.bobTimer * 3) * 8;
                 bird.vy = 0;
-                bird.rotation = 0;
+                bird.rotation = -0.08 + travel * 0.08;
             }
             bird.wingTimer += dt;
             if (bird.wingTimer > 0.06) { bird.wingTimer = 0; bird.wing = (bird.wing + 1) % 3; }
@@ -1272,30 +1512,38 @@
 
     // ---------- Drawing: backgrounds ----------
     function drawSky() {
+        const skyStages = [
+            { top: '#4ec0ca', mid: '#7ed4dc', bot: '#bde7eb' }, // dia
+            { top: '#f08a5d', mid: '#d66b7d', bot: '#ffd28f' }, // tarde
+            { top: '#0c1a3a', mid: '#1f3566', bot: '#3b5a8a' }, // noche
+            { top: '#5da7cc', mid: '#92c7d4', bot: '#ffd3a0' }  // manana
+        ];
+        const cycle = cycleInfo();
+        const cur = skyStages[cycle.from];
+        const next = skyStages[cycle.to];
+        const top = mixHex(cur.top, next.top, cycle.blend);
+        const mid = mixHex(cur.mid, next.mid, cycle.blend);
+        const bot = mixHex(cur.bot, next.bot, cycle.blend);
+
         const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-        if (isNight) {
-            g.addColorStop(0, '#0c1a3a');
-            g.addColorStop(0.5, '#1f3566');
-            g.addColorStop(1, '#3b5a8a');
-        } else {
-            g.addColorStop(0, '#4ec0ca');
-            g.addColorStop(0.6, '#7ed4dc');
-            g.addColorStop(1, '#bde7eb');
-        }
+        g.addColorStop(0, top);
+        g.addColorStop(0.6, mid);
+        g.addColorStop(1, bot);
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, W, GROUND_Y);
     }
 
     // Stars (night only)
     function drawStars() {
-        if (!isNight) return;
+        const n = nightLevel();
+        if (n <= 0.05) return;
         ctx.save();
         const offset = starsOffset;
         for (let i = 0; i < 60; i++) {
             const sx = (i * 73 + offset * 8) % W;
             const sy = (i * 37) % (GROUND_Y - 200);
             const tw = (Math.sin(performance.now() / 600 + i) + 1) / 2;
-            ctx.globalAlpha = 0.4 + tw * 0.6;
+            ctx.globalAlpha = n * (0.4 + tw * 0.6);
             ctx.fillStyle = i % 7 === 0 ? '#ffe9b3' : '#ffffff';
             ctx.fillRect(Math.floor(sx), Math.floor(sy), 2, 2);
         }
@@ -1305,8 +1553,20 @@
     // Sun / Moon
     function drawCelestial() {
         ctx.save();
-        const cx = W - 95, cy = 110;
-        if (isNight) {
+        const n = nightLevel();
+        const d = duskLevel();
+        const dawn = dawnLevel();
+        const stage = cycleStage();
+        const sunT = stage < 2 ? stage / 2 : Math.max(0, stage - 3) * 0.35;
+        const moonT = clamp01((stage - 1.55) / 1.7);
+        const sunX = W - 95 - sunT * 130;
+        const sunY = 115 + Math.sin(sunT * Math.PI) * 55 + d * 42 - dawn * 22;
+        const moonX = W - 70 - moonT * 170;
+        const moonY = 95 + Math.sin(moonT * Math.PI) * 45;
+
+        if (n > 0.15) {
+            const cx = moonX, cy = moonY;
+            ctx.globalAlpha = n;
             // Moon glow
             const grd = ctx.createRadialGradient(cx, cy, 10, cx, cy, 80);
             grd.addColorStop(0, 'rgba(255,255,220,0.35)');
@@ -1323,7 +1583,12 @@
             ctx.beginPath(); ctx.arc(cx + 14, cy + 8, 4, 0, Math.PI * 2); ctx.fill();
             ctx.beginPath(); ctx.arc(cx + 8, cy - 12, 3, 0, Math.PI * 2); ctx.fill();
             ctx.beginPath(); ctx.arc(cx + 22, cy - 4, 2, 0, Math.PI * 2); ctx.fill();
-        } else {
+            ctx.globalAlpha = 1;
+        }
+        const sunAlpha = Math.max(0, stage < 2 ? 1 - n * 0.85 : dawn * 0.95);
+        if (sunAlpha > 0.05) {
+            const cx = sunX, cy = sunY;
+            ctx.globalAlpha = sunAlpha;
             // Sun glow
             const grd = ctx.createRadialGradient(cx, cy, 10, cx, cy, 100);
             grd.addColorStop(0, 'rgba(255,250,200,0.45)');
@@ -1334,42 +1599,77 @@
             ctx.beginPath(); ctx.arc(cx, cy, 34, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#ffe066';
             ctx.beginPath(); ctx.arc(cx, cy, 26, 0, Math.PI * 2); ctx.fill();
+            ctx.globalAlpha = 1;
         }
         ctx.restore();
     }
 
+    const cloudSpriteCache = {};
+
+    function buildCloudSprite(night) {
+        const key = night ? 'night' : 'day';
+        if (cloudSpriteCache[key]) return cloudSpriteCache[key];
+        const off = makePixelCanvas(160, 80);
+        const x = off.ctx;
+        const cx = 80, cy = 40;
+        const col = night ? '#5a6c8c' : '#ffffff';
+        const shade = night ? '#3d4f74' : '#d8f6f8';
+        const hi = night ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.72)';
+
+        x.fillStyle = col;
+        x.beginPath();
+        x.moveTo(cx - 54, cy + 18);
+        x.bezierCurveTo(cx - 62, cy - 2, cx - 41, cy - 21, cx - 18, cy - 13);
+        x.bezierCurveTo(cx - 8, cy - 35, cx + 27, cy - 36, cx + 35, cy - 11);
+        x.bezierCurveTo(cx + 58, cy - 17, cx + 79, cy + 2, cx + 68, cy + 22);
+        x.lineTo(cx - 42, cy + 24);
+        x.bezierCurveTo(cx - 50, cy + 24, cx - 55, cy + 21, cx - 54, cy + 18);
+        x.fill();
+
+        x.fillStyle = shade;
+        x.beginPath();
+        x.moveTo(cx - 38, cy + 15);
+        x.bezierCurveTo(cx - 6, cy + 21, cx + 33, cy + 18, cx + 66, cy + 20);
+        x.lineTo(cx + 60, cy + 27);
+        x.lineTo(cx - 44, cy + 27);
+        x.closePath();
+        x.fill();
+
+        x.fillStyle = hi;
+        x.fillRect(cx - 20, cy - 22, 28, 5);
+        x.fillRect(cx + 15, cy - 18, 22, 4);
+        x.fillRect(cx - 45, cy - 5, 16, 4);
+
+        cloudSpriteCache[key] = off.canvas;
+        return off.canvas;
+    }
+
     function drawClouds() {
         ctx.save();
-        // Far clouds (faded, slow)
-        ctx.globalAlpha = isNight ? 0.25 : 0.55;
-        for (let i = -1; i < 4; i++) {
-            const x = (((i * 240) - cloudOffset * 0.6) % (W + 240) + (W + 240)) % (W + 240) - 120;
-            cloudShape(x + 60, 230, 0.7);
+        const n = nightLevel();
+        const daySprite = buildCloudSprite(false);
+        const nightSprite = buildCloudSprite(true);
+        function drawRows(sprite, alphaScale) {
+            // Far clouds (faded, slow)
+            ctx.globalAlpha = (0.55 - n * 0.3) * alphaScale;
+            for (let i = -1; i < 4; i++) {
+                const x = (((i * 240) - cloudOffset * 0.6) % (W + 240) + (W + 240)) % (W + 240) - 120;
+                cloudShape(sprite, x + 60, 230 + Math.sin(cloudOffset * 0.02 + i) * 3, 0.7);
+            }
+            // Near clouds (bigger, faster, brighter)
+            ctx.globalAlpha = (0.95 - n * 0.45) * alphaScale;
+            for (let i = -1; i < 3; i++) {
+                const x = (((i * 280) - cloudOffset * 1.0 + 80) % (W + 280) + (W + 280)) % (W + 280) - 140;
+                cloudShape(sprite, x + 60, 150 + Math.sin(cloudOffset * 0.025 + i * 1.7) * 4, 1.0);
+            }
         }
-        // Near clouds (bigger, faster, brighter)
-        ctx.globalAlpha = isNight ? 0.5 : 0.95;
-        for (let i = -1; i < 3; i++) {
-            const x = (((i * 280) - cloudOffset * 1.0 + 80) % (W + 280) + (W + 280)) % (W + 280) - 140;
-            cloudShape(x + 60, 150, 1.0);
-        }
+        drawRows(daySprite, 1 - n);
+        drawRows(nightSprite, n);
         ctx.restore();
     }
-    function cloudShape(x, y, scale) {
-        const col = isNight ? '#5a6c8c' : '#ffffff';
-        ctx.fillStyle = col;
-        const r = 22 * scale;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.arc(x + 22 * scale, y + 6 * scale, 26 * scale, 0, Math.PI * 2);
-        ctx.arc(x + 50 * scale, y - 4 * scale, 22 * scale, 0, Math.PI * 2);
-        ctx.arc(x + 70 * scale, y + 8 * scale, 18 * scale, 0, Math.PI * 2);
-        ctx.arc(x + 35 * scale, y - 14 * scale, 18 * scale, 0, Math.PI * 2);
-        ctx.fill();
-        // Inner highlight
-        ctx.fillStyle = isNight ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.85)';
-        ctx.beginPath();
-        ctx.arc(x + 30 * scale, y - 8 * scale, 14 * scale, 0, Math.PI * 2);
-        ctx.fill();
+
+    function cloudShape(sprite, x, y, scale) {
+        ctx.drawImage(sprite, x - 80 * scale, y - 40 * scale, 160 * scale, 80 * scale);
     }
 
     // Distant city silhouette layer
@@ -1428,36 +1728,193 @@
     }
 
     // Bushes/trees front layer
+    const bushSpriteCache = {};
+
+    function buildBushSprite(night) {
+        const key = night ? 'night' : 'day';
+        if (bushSpriteCache[key]) return bushSpriteCache[key];
+        const off = makePixelCanvas(80, 48);
+        const x = off.ctx;
+        const baseY = 46;
+        const dark = night ? '#17391f' : '#4f9457';
+        const mid = night ? '#1f4a2a' : '#5fa66a';
+        const light = night ? '#2a663b' : '#7dd24a';
+        const blade = night ? '#244f2e' : '#67bd3f';
+
+        x.fillStyle = dark;
+        x.beginPath();
+        x.moveTo(0, baseY);
+        x.lineTo(8, baseY - 17);
+        x.lineTo(21, baseY - 31);
+        x.lineTo(36, baseY - 24);
+        x.lineTo(48, baseY - 39);
+        x.lineTo(67, baseY - 22);
+        x.lineTo(80, baseY);
+        x.closePath();
+        x.fill();
+
+        x.fillStyle = mid;
+        x.beginPath();
+        x.moveTo(6, baseY);
+        x.lineTo(17, baseY - 26);
+        x.lineTo(33, baseY - 34);
+        x.lineTo(43, baseY - 20);
+        x.lineTo(59, baseY - 31);
+        x.lineTo(73, baseY);
+        x.closePath();
+        x.fill();
+
+        x.fillStyle = light;
+        x.fillRect(24, baseY - 31, 12, 10);
+        x.fillRect(53, baseY - 26, 9, 8);
+
+        x.strokeStyle = blade;
+        x.lineWidth = 3;
+        for (let i = 0; i < 5; i++) {
+            const gx = 7 + i * 14;
+            const gh = 12 + (i % 3) * 4;
+            x.beginPath();
+            x.moveTo(gx, baseY + 2);
+            x.lineTo(gx + (i % 2 === 0 ? 2 : -2), baseY - gh);
+            x.stroke();
+        }
+
+        bushSpriteCache[key] = off.canvas;
+        return off.canvas;
+    }
+
     function drawBushes() {
         const baseY = GROUND_Y - 4;
         ctx.save();
-        ctx.fillStyle = isNight ? '#1f4a2a' : '#5fa66a';
         const off = bushOffset;
+        const n = nightLevel();
+        const daySprite = buildBushSprite(false);
+        const nightSprite = buildBushSprite(true);
         for (let x = -((off) % 70) - 70; x < W + 70; x += 70) {
-            const h = 36;
+            const y = baseY + Math.sin((x + off) * 0.02) * 2;
+            ctx.globalAlpha = 1 - n;
+            ctx.drawImage(daySprite, Math.round(x), Math.round(y - 46), 80, 48);
+            ctx.globalAlpha = n;
+            ctx.drawImage(nightSprite, Math.round(x), Math.round(y - 46), 80, 48);
+        }
+        ctx.restore();
+    }
+
+    function desertProgress() {
+        return state === STATE.WIN ? clamp01((winTimer - 1.15) / 2.2) : 0;
+    }
+
+    function drawDesertScenery(alpha) {
+        if (alpha <= 0) return;
+        const baseY = GROUND_Y - 6;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        // Dunas lejanas.
+        ctx.fillStyle = isNight ? '#5f4a2d' : '#d9b66d';
+        for (let x = -80 - (cityOffset * 0.25 % 160); x < W + 160; x += 160) {
             ctx.beginPath();
-            ctx.arc(x + 12, baseY - h + 6, 16, 0, Math.PI * 2);
-            ctx.arc(x + 30, baseY - h - 2, 18, 0, Math.PI * 2);
-            ctx.arc(x + 50, baseY - h + 4, 14, 0, Math.PI * 2);
+            ctx.moveTo(x, baseY);
+            ctx.quadraticCurveTo(x + 80, baseY - 70, x + 170, baseY);
+            ctx.closePath();
             ctx.fill();
         }
-        // Highlight on bushes
-        ctx.fillStyle = isNight ? '#2a663b' : '#7dd24a';
-        for (let x = -((off) % 70) - 70; x < W + 70; x += 70) {
+
+        // Piramides pixel-art en el fondo.
+        const pyr = [
+            { x: 55 - cityOffset * 0.18 % 520, w: 150, h: 110 },
+            { x: 255 - cityOffset * 0.12 % 560, w: 210, h: 145 },
+            { x: 430 - cityOffset * 0.16 % 620, w: 130, h: 95 }
+        ];
+        for (const p of pyr) {
+            let px0 = ((p.x % (W + 260)) + (W + 260)) % (W + 260) - 130;
+            ctx.fillStyle = isNight ? '#80643c' : '#d2a95f';
             ctx.beginPath();
-            ctx.arc(x + 26, baseY - 38, 8, 0, Math.PI * 2);
+            ctx.moveTo(px0, baseY);
+            ctx.lineTo(px0 + p.w / 2, baseY - p.h);
+            ctx.lineTo(px0 + p.w, baseY);
+            ctx.closePath();
             ctx.fill();
+            ctx.fillStyle = isNight ? '#5c472d' : '#b18448';
+            ctx.beginPath();
+            ctx.moveTo(px0 + p.w / 2, baseY - p.h);
+            ctx.lineTo(px0 + p.w, baseY);
+            ctx.lineTo(px0 + p.w * 0.62, baseY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = isNight ? 'rgba(40,25,15,0.45)' : 'rgba(95,64,32,0.35)';
+            ctx.lineWidth = 2;
+            for (let y = 18; y < p.h; y += 18) {
+                ctx.beginPath();
+                ctx.moveTo(px0 + p.w * 0.5 - y * 0.7, baseY - p.h + y);
+                ctx.lineTo(px0 + p.w * 0.5 + y * 0.7, baseY - p.h + y);
+                ctx.stroke();
+            }
         }
+
+        // Camellos muy lejanos en silueta.
+        ctx.fillStyle = isNight ? '#2d241b' : '#7c5a36';
+        for (let i = 0; i < 4; i++) {
+            const cx = ((i * 170 - cityOffset * 0.35) % (W + 180) + W + 180) % (W + 180) - 90;
+            const cy = baseY - 28 - (i % 2) * 10;
+            ctx.fillRect(cx, cy, 24, 8);
+            ctx.fillRect(cx + 5, cy - 7, 7, 7);
+            ctx.fillRect(cx + 21, cy - 4, 8, 5);
+            ctx.fillRect(cx + 3, cy + 8, 3, 10);
+            ctx.fillRect(cx + 18, cy + 8, 3, 10);
+            ctx.fillRect(cx + 28, cy - 10, 3, 11);
+        }
+
+        // Columnas/tubos egipcios de fondo para anticipar el segundo mundo.
+        for (let x = -90 - (cityOffset * 0.7 % 190); x < W + 190; x += 190) {
+            const h = 90 + ((x + 320) % 3) * 28;
+            drawEgyptColumn(x, baseY - h, 42, h);
+        }
+        ctx.restore();
+    }
+
+    function drawEgyptColumn(x, y, w, h) {
+        ctx.fillStyle = isNight ? '#8d6b3e' : '#d8aa58';
+        ctx.fillRect(x, y + 16, w, h - 16);
+        ctx.fillStyle = isNight ? '#5d452c' : '#9f733d';
+        ctx.fillRect(x, y + 16, 3, h - 16);
+        ctx.fillRect(x + w - 3, y + 16, 3, h - 16);
+        ctx.fillStyle = isNight ? '#b08b52' : '#f0cd7b';
+        ctx.fillRect(x + 8, y + 20, 4, h - 24);
+        ctx.fillStyle = '#2d5f75';
+        ctx.fillRect(x + 5, y + 28, w - 10, 4);
+        ctx.fillStyle = '#b33a35';
+        ctx.fillRect(x + 5, y + 42, w - 10, 4);
+        ctx.fillStyle = isNight ? '#7b5b35' : '#c8964e';
+        ctx.fillRect(x - 6, y, w + 12, 18);
+        ctx.fillRect(x - 10, y + h - 8, w + 20, 8);
+        ctx.strokeStyle = '#4d331d';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 6, y, w + 12, 18);
+    }
+
+    function drawDesertPipeOrnaments(x, top, bottom, width) {
+        ctx.save();
+        ctx.fillStyle = '#d8aa58';
+        ctx.fillRect(x + 8, Math.max(12, top - 22), width - 16, 4);
+        ctx.fillRect(x + 8, bottom + 18, width - 16, 4);
+        ctx.fillStyle = '#2d5f75';
+        ctx.fillRect(x + 14, Math.max(18, top - 16), 10, 4);
+        ctx.fillRect(x + width - 28, bottom + 24, 10, 4);
+        ctx.fillStyle = '#b33a35';
+        ctx.fillRect(x + width / 2 - 6, Math.max(24, top - 10), 12, 4);
+        ctx.fillRect(x + width / 2 - 6, bottom + 30, 12, 4);
         ctx.restore();
     }
 
     function drawPipe(p) {
         const fade = p.fadeOut !== undefined ? p.fadeOut : 1.0;
+        const pWidth = getPipeWidth(p);
         ctx.save();
         ctx.globalAlpha = fade;
         // Cuando se desvanecen, escalan ligeramente hacia adentro y se difuminan
         const scale = 0.6 + 0.4 * fade;
-        const cx = p.x + PIPE_WIDTH / 2;
+        const cx = p.x + pWidth / 2;
         ctx.translate(cx, 0);
         ctx.scale(scale, 1);
         ctx.translate(-cx, 0);
@@ -1465,23 +1922,25 @@
         // Top pipe
         const topBodyH = p.top - PIPE_CAP_H;
         if (topBodyH > 0) {
-            ctx.drawImage(pipeSprite.body, 0, 0, PIPE_WIDTH, 1, p.x, 0, PIPE_WIDTH, topBodyH);
+            ctx.drawImage(pipeSprite.body, 0, 0, PIPE_WIDTH, 1, p.x, 0, pWidth, topBodyH);
             ctx.fillStyle = '#243f0e';
             ctx.fillRect(p.x, 0, 2, topBodyH);
-            ctx.fillRect(p.x + PIPE_WIDTH - 2, 0, 2, topBodyH);
+            ctx.fillRect(p.x + pWidth - 2, 0, 2, topBodyH);
         }
-        ctx.drawImage(pipeSprite.cap, p.x - 4, p.top - PIPE_CAP_H);
+        ctx.drawImage(pipeSprite.cap, p.x - 4, p.top - PIPE_CAP_H, pWidth + 8, PIPE_CAP_H);
 
         // Bottom pipe
-        ctx.drawImage(pipeSprite.cap, p.x - 4, p.bottom);
+        ctx.drawImage(pipeSprite.cap, p.x - 4, p.bottom, pWidth + 8, PIPE_CAP_H);
         const botY = p.bottom + PIPE_CAP_H;
         const botH = GROUND_Y - botY;
         if (botH > 0) {
-            ctx.drawImage(pipeSprite.body, 0, 0, PIPE_WIDTH, 1, p.x, botY, PIPE_WIDTH, botH);
+            ctx.drawImage(pipeSprite.body, 0, 0, PIPE_WIDTH, 1, p.x, botY, pWidth, botH);
             ctx.fillStyle = '#243f0e';
             ctx.fillRect(p.x, botY, 2, botH);
-            ctx.fillRect(p.x + PIPE_WIDTH - 2, botY, 2, botH);
+            ctx.fillRect(p.x + pWidth - 2, botY, 2, botH);
         }
+
+        if (state === STATE.WIN) drawDesertPipeOrnaments(p.x, p.top, p.bottom, pWidth);
         ctx.restore();
     }
 
@@ -1494,32 +1953,39 @@
         const entrance = Math.min(1, bossEntranceTimer);
         const ease = 1 - Math.pow(1 - entrance, 3);
         const drawX = state === STATE.WIN ? boss.x : (W + sw) - ease * ((W + sw) - boss.x);
+        const flapT = performance.now() / (bossPhase === 2 ? 85 : 130);
+        const drawY = boss.y + Math.sin(flapT) * 2.5 * sc;
+        const tilt = state === STATE.WIN ? 0 : Math.sin(boss.movePhase * 1.6) * 0.035;
 
         ctx.save();
         // Aura roja pulsante (scales with boss)
         const auraPulse = 0.6 + Math.sin(performance.now() / 250) * 0.2;
         const auraR = sw * 0.85 * auraPulse;
-        const aura = ctx.createRadialGradient(drawX, boss.y, 10, drawX, boss.y, auraR);
+        const aura = ctx.createRadialGradient(drawX, drawY, 10, drawX, drawY, auraR);
         aura.addColorStop(0, 'rgba(230, 57, 70, 0.45)');
         aura.addColorStop(0.5, 'rgba(138, 63, 191, 0.25)');
         aura.addColorStop(1, 'rgba(138, 63, 191, 0)');
         ctx.fillStyle = aura;
-        ctx.fillRect(drawX - auraR, boss.y - auraR, auraR * 2, auraR * 2);
+        ctx.fillRect(drawX - auraR, drawY - auraR, auraR * 2, auraR * 2);
 
         // Sombra debajo del jefe
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.beginPath();
-        ctx.ellipse(drawX, boss.y + sh * 0.4, sw * 0.4, 8 * sc, 0, 0, Math.PI * 2);
+        ctx.ellipse(drawX, drawY + sh * 0.4, sw * 0.4, 8 * sc, 0, 0, Math.PI * 2);
         ctx.fill();
 
         // Sprite del jefe (scaled)
-        ctx.drawImage(bossFrames[boss.wing], drawX - sw / 2, boss.y - sh / 2, sw, sh);
+        ctx.save();
+        ctx.translate(drawX, drawY);
+        ctx.rotate(tilt);
+        ctx.drawImage(bossFrames[boss.wing], -sw / 2, -sh / 2, sw, sh);
+        ctx.restore();
 
         // Brillo en los ojos cuando está cargando un rayo
         if (boss.eyeGlow > 0) {
             const glowR = 20 + boss.eyeGlow * 18;
             const eyeX = drawX - sw * 0.32;
-            const eyeY = boss.y - sh * 0.08;
+            const eyeY = drawY - sh * 0.08;
             const eyeGlow = ctx.createRadialGradient(eyeX, eyeY, 2, eyeX, eyeY, glowR);
             eyeGlow.addColorStop(0, 'rgba(255, 80, 90, ' + (boss.eyeGlow * 0.9) + ')');
             eyeGlow.addColorStop(1, 'rgba(255, 80, 90, 0)');
@@ -1534,38 +2000,45 @@
         ctx.save();
         for (const r of rays) {
             if (r.phase === 0) {
-                // Telegraph: línea roja delgada parpadeante apuntando desde el jefe
+                // Telegraph: apunta desde la boca/ojo del jefe, nunca desde la nada.
                 const t = r.age / r.telegraphTime;
                 const blink = (Math.sin(r.age * 30) + 1) / 2;
                 ctx.strokeStyle = 'rgba(255, 60, 80, ' + (0.4 + blink * 0.5) + ')';
                 ctx.lineWidth = 2 + t * 2;
                 ctx.setLineDash([8, 6]);
                 ctx.beginPath();
-                ctx.moveTo(0, r.y);
-                ctx.lineTo(W, r.y);
+                ctx.moveTo(r.sx, r.sy);
+                ctx.lineTo(r.ex, r.ey);
                 ctx.stroke();
                 ctx.setLineDash([]);
                 // Indicador de carga en el origen
                 ctx.fillStyle = 'rgba(255, 80, 100, ' + (0.5 + t * 0.5) + ')';
                 ctx.beginPath();
-                ctx.arc(boss.x - 10, r.y > boss.y ? boss.y + 5 : boss.y - 5, 5 + t * 6, 0, Math.PI * 2);
+                ctx.arc(r.sx, r.sy, 5 + t * 8, 0, Math.PI * 2);
                 ctx.fill();
             } else if (r.phase === 1) {
                 // Disparo: rayo grueso brillante, anchura decreciente con el tiempo
                 const t = r.age / r.fireTime;
                 const thickness = 28 * (1 - t * 0.4);
-                // Halo
-                const halo = ctx.createLinearGradient(0, r.y - thickness, 0, r.y + thickness);
-                halo.addColorStop(0, 'rgba(255, 80, 100, 0)');
-                halo.addColorStop(0.5, 'rgba(255, 80, 100, 0.55)');
-                halo.addColorStop(1, 'rgba(255, 80, 100, 0)');
-                ctx.fillStyle = halo;
-                ctx.fillRect(0, r.y - thickness, W, thickness * 2);
-                // Núcleo
-                ctx.fillStyle = '#ff5160';
-                ctx.fillRect(0, r.y - 6, W, 12);
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, r.y - 2, W, 4);
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = 'rgba(255, 80, 100, 0.38)';
+                ctx.lineWidth = thickness * 1.9;
+                ctx.beginPath();
+                ctx.moveTo(r.sx, r.sy);
+                ctx.lineTo(r.ex, r.ey);
+                ctx.stroke();
+                ctx.strokeStyle = '#ff5160';
+                ctx.lineWidth = thickness * 0.72;
+                ctx.beginPath();
+                ctx.moveTo(r.sx, r.sy);
+                ctx.lineTo(r.ex, r.ey);
+                ctx.stroke();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = Math.max(3, thickness * 0.18);
+                ctx.beginPath();
+                ctx.moveTo(r.sx, r.sy);
+                ctx.lineTo(r.ex, r.ey);
+                ctx.stroke();
             }
         }
         ctx.restore();
@@ -1585,9 +2058,13 @@
     }
 
     function drawGround() {
+        const desert = desertProgress();
         // Sand base
         const g = ctx.createLinearGradient(0, GROUND_Y, 0, H);
-        if (isNight) {
+        if (desert > 0.5) {
+            g.addColorStop(0, isNight ? '#8a6a36' : '#e2bd66');
+            g.addColorStop(1, isNight ? '#5c4528' : '#c99648');
+        } else if (isNight) {
             g.addColorStop(0, '#7a6e3a');
             g.addColorStop(1, '#4d452a');
         } else {
@@ -1598,9 +2075,9 @@
         ctx.fillRect(0, GROUND_Y, W, GROUND_HEIGHT);
 
         // Grass strip top
-        ctx.fillStyle = isNight ? '#3d6e1a' : '#7dd24a';
+        ctx.fillStyle = desert > 0.5 ? (isNight ? '#6f552d' : '#d7a84d') : (isNight ? '#3d6e1a' : '#7dd24a');
         ctx.fillRect(0, GROUND_Y, W, 14);
-        ctx.fillStyle = isNight ? '#244412' : '#5fa83a';
+        ctx.fillStyle = desert > 0.5 ? (isNight ? '#3d2f22' : '#a86f35') : (isNight ? '#244412' : '#5fa83a');
         ctx.fillRect(0, GROUND_Y + 14, W, 4);
 
         // Diagonal hatch
@@ -1701,20 +2178,25 @@
         if (state === STATE.PLAYING || state === STATE.DEAD) {
             drawScore(score, W / 2, 80, 64);
         } else if (state === STATE.BOSS) {
-            // Mostrar BOSS FIGHT y barra de tiempo restante
-            const remaining = Math.max(0, BOSS_FIGHT_DURATION - bossTime);
+            // Barra de espera: primero carga 1 minuto, luego sobrevives 30s de rayos.
+            const phaseRemaining = bossPhase === 1
+                ? Math.max(0, BOSS_RAY_PHASE_AT - bossTime)
+                : Math.max(0, BOSS_FIGHT_DURATION - bossTime);
+            const remaining = phaseRemaining;
             const mm = Math.floor(remaining / 60);
             const ss = Math.floor(remaining % 60);
             const timeStr = mm + ':' + String(ss).padStart(2, '0');
             // Texto JEFE FINAL
-            drawTextWithShadow('JEFE FINAL', W / 2, 50, 32, '#ff5160');
+            drawTextWithShadow(bossPhase === 1 ? 'JEFE FINAL' : 'RAYOS', W / 2, 50, 32, '#ff5160');
             // Barra
             const barW = 320, barH = 14;
             const bx = W / 2 - barW / 2, by = 78;
             ctx.fillStyle = 'rgba(0,0,0,0.55)';
             roundedRect(bx - 2, by - 2, barW + 4, barH + 4, 4);
             ctx.fill();
-            const pct = bossTime / BOSS_FIGHT_DURATION;
+            const pct = bossPhase === 1
+                ? bossTime / BOSS_RAY_PHASE_AT
+                : (bossTime - BOSS_RAY_PHASE_AT) / (BOSS_FIGHT_DURATION - BOSS_RAY_PHASE_AT);
             const fillW = barW * Math.min(1, pct);
             const barGrad = ctx.createLinearGradient(bx, 0, bx + barW, 0);
             barGrad.addColorStop(0, '#ff5160');
@@ -1763,7 +2245,7 @@
         drawTextWithShadow('¡VICTORIA!', 0, 0, 64, '#ffd34d');
         ctx.restore();
 
-        drawTextWithShadow('Has derrotado al jefe final', W / 2, 185, 20, '#ffffff');
+        drawTextWithShadow(winTimer > 1.2 ? 'Rumbo al desierto' : 'Has derrotado al jefe final', W / 2, 185, 20, '#ffffff');
 
         // Panel de logros (aparece tras 0.8s)
         if (winTimer > 0.8) {
@@ -1794,8 +2276,8 @@
 
             // Lista de logros
             const achievements = [
-                { icon: '🏆', text: 'Maestro del cielo (70+ pts)' },
-                { icon: '👑', text: 'Convocaste al jefe (120+ pts)' },
+                { icon: '🏆', text: 'Dominaste tubos animados (120+ pts)' },
+                { icon: '👑', text: 'Convocaste al jefe (150+ pts)' },
                 { icon: '⚔', text: 'Sobreviviste 1:30 al jefe' },
                 { icon: '⚡', text: 'Esquivaste todos los rayos' },
                 { icon: '🎖', text: 'Puntuación: ' + score + (score === bestScore ? '  (¡Récord!)' : '') }
@@ -1983,8 +2465,18 @@
         drawStars();
         drawCelestial();
         drawClouds();
-        drawCity();
-        drawBushes();
+        const dProg = desertProgress();
+        if (dProg > 0) {
+            ctx.save();
+            ctx.globalAlpha = 1 - dProg;
+            drawCity();
+            drawBushes();
+            ctx.restore();
+            drawDesertScenery(dProg);
+        } else {
+            drawCity();
+            drawBushes();
+        }
 
         // El jefe se dibuja detrás de los tubos pero delante de la ciudad
         if (bossActive || state === STATE.WIN) drawBoss();
@@ -2012,7 +2504,13 @@
     // ---------- Loop ----------
     let lastTime = performance.now();
     function loop(now) {
-        let dt = (now - lastTime) / 1000;
+        const frameMs = 1000 / targetFps;
+        const elapsedMs = now - lastTime;
+        if (elapsedMs < frameMs - 0.25) {
+            requestAnimationFrame(loop);
+            return;
+        }
+        let dt = elapsedMs / 1000;
         lastTime = now;
         if (dt > 0.05) dt = 0.05;
         update(dt);
@@ -2025,6 +2523,7 @@
             if (audioCtx) audioCtx.suspend();
             if (musicPlaying) activeMusicEl().pause();
         } else {
+            lastTime = performance.now();
             if (audioCtx) audioCtx.resume();
             if (musicPlaying) activeMusicEl().play().catch(() => {});
         }

@@ -63,11 +63,11 @@ body {
     text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
 
-/* Music toggle button */
-#music-toggle {
+/* Top buttons */
+#music-toggle,
+#settings-toggle {
     position: absolute;
     top: 10px;
-    left: 10px;
     width: 42px;
     height: 42px;
     border-radius: 50%;
@@ -84,11 +84,15 @@ body {
     z-index: 5;
     box-shadow: 0 2px 8px rgba(0,0,0,0.35);
 }
-#music-toggle:hover {
+#music-toggle { left: 10px; }
+#settings-toggle { right: 10px; }
+#music-toggle:hover,
+#settings-toggle:hover {
     background: rgba(0,0,0,0.65);
     transform: scale(1.06);
 }
-#music-toggle:active {
+#music-toggle:active,
+#settings-toggle:active {
     transform: scale(0.94);
 }
 #music-toggle.muted {
@@ -115,6 +119,31 @@ body {
     transform-origin: top left;
     transition: opacity 0.18s ease, transform 0.18s ease;
 }
+
+#settings-panel {
+    position: absolute;
+    top: 60px;
+    right: 10px;
+    width: 190px;
+    padding: 12px 14px;
+    background: rgba(20, 30, 40, 0.88);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    color: #fff;
+    font-size: 13px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+    z-index: 5;
+    transform-origin: top right;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+#settings-panel.hidden {
+    opacity: 0;
+    transform: scale(0.85) translateY(-6px);
+    pointer-events: none;
+}
 #volume-panel.hidden {
     opacity: 0;
     transform: scale(0.85) translateY(-6px);
@@ -140,6 +169,37 @@ body {
     justify-content: center;
     font-size: 12px;
     color: rgba(255,255,255,0.7);
+}
+
+.vp-value {
+    color: rgba(255,255,255,0.78);
+    font-weight: 700;
+}
+
+.fps-options {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+.fps-options button {
+    height: 32px;
+    border-radius: 7px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    font-weight: 800;
+    cursor: pointer;
+    transition: background 0.12s ease, transform 0.12s ease, border-color 0.12s ease;
+}
+
+.fps-options button.selected {
+    background: linear-gradient(180deg, #ffb74d 0%, #f57c00 100%);
+    border-color: rgba(255, 211, 77, 0.7);
+}
+
+.fps-options button:active {
+    transform: scale(0.94);
 }
 
 .vp-btn, .vp-mini {
