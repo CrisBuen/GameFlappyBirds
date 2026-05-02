@@ -36,7 +36,7 @@
     const _hRatio = H / 720;
     const PIPE_GAP = Math.round(165 * _hRatio);
     const PIPE_WIDTH = 72;
-    const BOSS_RAY_PIPE_WIDTH = 112;
+    const BOSS_RAY_PIPE_WIDTH = 108;
     const PIPE_INTERVAL = 1.45;
     const _pipeMargin = Math.round(80 * _hRatio);
     const PIPE_MIN_TOP = _pipeMargin;
@@ -49,11 +49,14 @@
     const PIPE_ANIMATION_SCORE = 120; // de 120 a 150: tubos animados facil/intermedio
     const BOSS_MUSIC_SCORE = 150;     // la musica del jefe entra junto con el jefe
     const BOSS_FIGHT_SCORE = 150;     // a partir de 150 puntos: comienza la pelea
-    const BOSS_FIGHT_DURATION = 90;   // 1:30 minuto
+    const BOSS_FIGHT_DURATION = 120;  // 2 minutos reales con el jefe
     const BOSS_RAY_PHASE_AT = 60;     // minuto 1: empieza la fase de rayos
+    const BOSS_FINAL_PHASE_AT = 90;   // ultimo medio minuto: sin tubos, rafagas de rayos
     const BOSS_PIPE_FADE_BEFORE_RAYS = 3;
-    const BOSS_RAY_SCALE = 2.25;
-    const DAY_CYCLE_STAGE_DURATION = 15;
+    const BOSS_FINAL_PIPE_FADE_BEFORE = 2.5;
+    const BOSS_RAY_SCALE = 2.75;
+    const BOSS_FINAL_SCALE = 2.92;
+    const DAY_CYCLE_STAGE_DURATION = 22;
     const DAY_CYCLE_DURATION = DAY_CYCLE_STAGE_DURATION * 4;
     const DAY_CYCLE_TRANSITION = 1.4;
 
@@ -64,11 +67,12 @@
     // Boss state
     let bossActive = false;
     let bossTime = 0;          // segundos transcurridos en la pelea
-    let bossPhase = 0;         // 0 = aún no, 1 = pipes dinámicos, 2 = rayos
+    let bossPhase = 0;         // 0 = aun no, 1 = carga, 2 = rayos+tubos, 3 = furia sin tubos
     let bossMusicSwitched = false;
     let bossEntranceTimer = 0; // animación de entrada (0..1)
     let pipesFadingOut = false;
     let bossPipeFadeStarted = false;
+    let bossFinalPipeFadeStarted = false;
     let rays = [];             // {sx, sy, ex, ey, telegraphTime, fireTime, age, phase}
     let raySpawnTimer = 0;
     let screenShake = 0;
@@ -390,203 +394,150 @@
 
     // ---------- Pixel-art boss sprite ----------
     // Sprite pixel-art dibujado con primitivas, 3 frames de aleteo. Renderizado a 4x.
-    const BOSS_SPRITE_W = 32;
-    const BOSS_SPRITE_H = 28;
+    const BOSS_SPRITE_W = 46;
+    const BOSS_SPRITE_H = 36;
     const BOSS_PIXEL = 4;
 
     function drawBossSprite(wingFrame) {
         const off = makePixelCanvas(BOSS_SPRITE_W, BOSS_SPRITE_H);
         const x = off.ctx;
 
-        // Paleta jefe — tonos morados/violetas oscuros con acentos rojos
-        const K = '#0a0512';      // contorno casi negro
-        const D1 = '#1d0c2a';     // morado muy oscuro (sombra)
-        const D2 = '#3a1a52';     // morado oscuro (cuerpo)
-        const D3 = '#5e2787';     // morado medio (highlight)
-        const D4 = '#8a3fbf';     // morado claro
-        const RED = '#e63946';    // ojo rojo
-        const RED_BR = '#ff7a85'; // ojo brillante
-        const BEAK_D = '#3a0a0a'; // pico oscuro
-        const BEAK_L = '#9a1a1a'; // pico
-        const HORN = '#c9b569';   // cuerno dorado
-        const HORN_D = '#7a6630'; // cuerno sombra
+        // Paleta del nuevo jefe: armadura morada mecanica, tanques dorados y ojos rojos.
+        const K = '#05030b';
+        const D0 = '#12071f';
+        const D1 = '#25103b';
+        const D2 = '#411b65';
+        const D3 = '#682aa0';
+        const D4 = '#a84ee6';
+        const HI = '#e5a7ff';
+        const RED = '#ef1f2d';
+        const RED_HI = '#ff847f';
+        const GOLD = '#f0b72e';
+        const GOLD_HI = '#ffe27a';
+        const GOLD_D = '#8a5513';
+        const METAL = '#9aa6bc';
+        const METAL_D = '#3b4058';
+        const CORE = '#8b28ff';
+        const CORE_HI = '#f2c8ff';
+        const clawLift = wingFrame === 0 ? -2 : (wingFrame === 2 ? 2 : 0);
 
-        // ---- Cuerpo principal (silueta ovalada apuntando a la izquierda, mirando al jugador) ----
-        // Filas 6..20, cuerpo grande
-        // Outline + relleno por filas
-        const bodyRows = [
-            // [y, leftOutline, rightOutline, fillColor]
-            [4, 11, 16, D2],
-            [5, 9, 18, D2],
-            [6, 7, 20, D2],
-            [7, 6, 22, D2],
-            [8, 5, 23, D2],
-            [9, 4, 24, D2],
-            [10, 3, 24, D2],
-            [11, 3, 24, D2],
-            [12, 3, 23, D2],
-            [13, 4, 22, D2],
-            [14, 5, 21, D2],
-            [15, 6, 20, D2],
-            [16, 7, 19, D2],
-            [17, 8, 18, D2],
-            [18, 10, 17, D2],
-            [19, 12, 16, D2],
+        function rect(px0, py0, w, h, c) {
+            x.fillStyle = c;
+            x.fillRect(px0, py0, w, h);
+        }
+        function row(py0, l, r, c) {
+            x.fillStyle = c;
+            x.fillRect(l, py0, r - l + 1, 1);
+        }
+        function tank(px0, py0, w, h) {
+            rect(px0 - 1, py0, w + 2, h, K);
+            rect(px0, py0 + 1, w, h - 2, GOLD);
+            rect(px0 + 1, py0 + 1, Math.max(1, Math.floor(w / 3)), h - 3, GOLD_HI);
+            rect(px0 + w - 2, py0 + 1, 2, h - 2, GOLD_D);
+            rect(px0, py0 + h - 2, w, 2, GOLD_D);
+            rect(px0 + 1, py0 - 1, w - 2, 1, METAL);
+        }
+
+        // Cola/tenaza posterior animada, similar al apendice curvo del diseno nuevo.
+        const tailRows = [
+            [10 + clawLift, 33, 39], [11 + clawLift, 34, 42], [12 + clawLift, 35, 44],
+            [13 + clawLift, 36, 45], [14 + clawLift, 37, 45], [15 + clawLift, 38, 44],
+            [16 + clawLift, 39, 43], [17 + clawLift, 40, 42]
         ];
-        // Pintar relleno
-        for (const [y, l, r] of bodyRows) {
-            x.fillStyle = D2;
-            x.fillRect(l, y, r - l + 1, 1);
-        }
-        // Highlights de cuerpo (zona superior)
-        x.fillStyle = D3;
-        x.fillRect(7, 6, 8, 1);
-        x.fillRect(6, 7, 10, 2);
-        x.fillRect(7, 9, 8, 1);
-        x.fillStyle = D4;
-        x.fillRect(8, 7, 5, 1);
-        x.fillRect(9, 8, 3, 1);
-        // Sombra inferior
-        x.fillStyle = D1;
-        x.fillRect(8, 16, 11, 1);
-        x.fillRect(10, 17, 8, 1);
-        x.fillRect(12, 18, 5, 1);
+        for (const [py0, l, r] of tailRows) row(py0, l, r, K);
+        row(11 + clawLift, 35, 40, D1);
+        row(12 + clawLift, 36, 42, D2);
+        row(13 + clawLift, 37, 43, D3);
+        row(14 + clawLift, 38, 43, D2);
+        row(15 + clawLift, 39, 42, D1);
+        rect(42, 10 + clawLift, 2, 3, D4);
+        rect(41, 12 + clawLift, 1, 1, HI);
 
-        // Outline cuerpo
-        x.fillStyle = K;
-        for (const [y, l, r] of bodyRows) {
-            x.fillRect(l - 1, y, 1, 1);
-            x.fillRect(r + 1, y, 1, 1);
-        }
-        // Outline top/bottom
-        x.fillRect(11, 3, 6, 1);
-        x.fillRect(12, 20, 5, 1);
+        // Cuerpo ovalado blindado.
+        const bodyRows = [
+            [7, 14, 25], [8, 10, 30], [9, 8, 33], [10, 6, 35],
+            [11, 5, 36], [12, 4, 37], [13, 3, 38], [14, 3, 39],
+            [15, 3, 39], [16, 3, 39], [17, 4, 38], [18, 4, 38],
+            [19, 5, 37], [20, 6, 36], [21, 7, 35], [22, 8, 34],
+            [23, 10, 32], [24, 12, 30], [25, 15, 27]
+        ];
+        for (const [py0, l, r] of bodyRows) row(py0, l - 1, r + 1, K);
+        for (const [py0, l, r] of bodyRows) row(py0, l, r, D2);
 
-        // ---- Cuernos / corona (3 puntas) ----
-        // Cuerno izquierdo
-        x.fillStyle = HORN;
-        x.fillRect(8, 1, 2, 3);
-        x.fillStyle = HORN_D;
-        x.fillRect(8, 3, 2, 1);
-        x.fillStyle = K;
-        x.fillRect(7, 1, 1, 3); x.fillRect(10, 1, 1, 3); x.fillRect(8, 0, 2, 1);
-        // Cuerno central (más grande)
-        x.fillStyle = HORN;
-        x.fillRect(13, 0, 3, 4);
-        x.fillStyle = HORN_D;
-        x.fillRect(13, 3, 3, 1);
-        x.fillRect(15, 1, 1, 2);
-        x.fillStyle = K;
-        x.fillRect(12, 0, 1, 4); x.fillRect(16, 0, 1, 4); x.fillRect(13, -1, 3, 1); // top
-        // Cuerno derecho
-        x.fillStyle = HORN;
-        x.fillRect(19, 1, 2, 3);
-        x.fillStyle = HORN_D;
-        x.fillRect(19, 3, 2, 1);
-        x.fillStyle = K;
-        x.fillRect(18, 1, 1, 3); x.fillRect(21, 1, 1, 3); x.fillRect(19, 0, 2, 1);
+        // Sombras, placas y brillos de armadura.
+        row(10, 8, 17, D3);
+        row(11, 7, 20, D3);
+        row(12, 8, 21, D4);
+        row(13, 11, 22, D3);
+        row(9, 18, 29, D1);
+        row(20, 9, 34, D1);
+        row(21, 11, 32, D0);
+        row(22, 14, 29, D0);
+        rect(17, 10, 2, 2, HI);
+        rect(22, 13, 5, 1, HI);
+        rect(28, 16, 7, 1, D4);
+        rect(32, 18, 4, 1, HI);
 
-        // ---- Ojos rojos brillantes (mirando al jugador, lado izquierdo del sprite) ----
-        // Ojo izq (más cerca del jugador)
-        x.fillStyle = K;
-        x.fillRect(3, 9, 5, 4);
-        x.fillStyle = RED;
-        x.fillRect(4, 10, 3, 2);
-        x.fillStyle = RED_BR;
-        x.fillRect(5, 10, 1, 1);
-        // Ojo der (en la mejilla del jefe)
-        x.fillStyle = K;
-        x.fillRect(9, 10, 4, 3);
-        x.fillStyle = RED;
-        x.fillRect(10, 11, 2, 1);
-        x.fillStyle = RED_BR;
-        x.fillRect(10, 11, 1, 1);
+        // Placas mecanicas negras y lineas de detalle.
+        rect(3, 14, 3, 6, K);
+        rect(6, 13, 2, 8, K);
+        rect(9, 19, 8, 1, K);
+        rect(20, 23, 8, 1, K);
+        rect(27, 12, 2, 9, K);
+        rect(31, 14, 6, 1, K);
+        rect(32, 17, 5, 1, K);
+        rect(11, 11, 8, 1, K);
+        rect(15, 8, 5, 1, METAL_D);
+        rect(16, 7, 4, 1, METAL);
 
-        // ---- Pico (apuntando a la izquierda — boca abierta) ----
-        x.fillStyle = BEAK_L;
-        x.fillRect(0, 12, 4, 2);
-        x.fillRect(1, 14, 4, 2);
-        x.fillStyle = BEAK_D;
-        x.fillRect(0, 14, 2, 2);
-        x.fillRect(2, 13, 1, 1);
-        x.fillStyle = K;
-        x.fillRect(0, 11, 4, 1); x.fillRect(0, 16, 5, 1);
-        x.fillRect(4, 12, 1, 2); x.fillRect(5, 14, 1, 2);
-        // Diente
-        x.fillStyle = '#ffffff';
-        x.fillRect(2, 14, 1, 1);
+        // Tanques dorados superiores.
+        tank(13, 1, 5, 8);
+        tank(22, 0, 5, 9);
+        tank(32, 2, 5, 7);
 
-        // ---- Alas (3 frames) ----
-        x.fillStyle = K;
-        if (wingFrame === 0) {
-            // Ala arriba — extendida hacia arriba-atrás
-            x.fillStyle = D1;
-            x.fillRect(20, 2, 6, 6);
-            x.fillRect(22, 1, 4, 2);
-            x.fillStyle = D2;
-            x.fillRect(21, 3, 4, 4);
-            x.fillStyle = K;
-            x.fillRect(19, 2, 1, 6); x.fillRect(20, 1, 6, 1);
-            x.fillRect(26, 2, 1, 6); x.fillRect(20, 8, 7, 1);
-        } else if (wingFrame === 1) {
-            // Ala media
-            x.fillStyle = D1;
-            x.fillRect(20, 8, 7, 5);
-            x.fillStyle = D2;
-            x.fillRect(21, 9, 5, 3);
-            x.fillStyle = K;
-            x.fillRect(19, 8, 1, 5); x.fillRect(20, 7, 7, 1);
-            x.fillRect(27, 8, 1, 5); x.fillRect(20, 13, 8, 1);
-        } else {
-            // Ala abajo — extendida hacia abajo
-            x.fillStyle = D1;
-            x.fillRect(20, 14, 6, 6);
-            x.fillRect(22, 19, 4, 2);
-            x.fillStyle = D2;
-            x.fillRect(21, 15, 4, 4);
-            x.fillStyle = K;
-            x.fillRect(19, 14, 1, 6); x.fillRect(20, 13, 6, 1);
-            x.fillRect(26, 14, 1, 7); x.fillRect(20, 21, 7, 1);
-        }
+        // Ojos rojos cuadrados.
+        rect(5, 14, 7, 5, K);
+        rect(13, 14, 6, 5, K);
+        rect(6, 15, 5, 3, RED);
+        rect(14, 15, 4, 3, RED);
+        rect(9, 15, 1, 2, RED_HI);
+        rect(16, 15, 1, 2, RED_HI);
+        rect(6, 18, 5, 1, '#7f0b16');
+        rect(14, 18, 4, 1, '#7f0b16');
 
-        // ---- Rediseño: cola, espinas y talones para hacerlo mas imponente ----
-        x.fillStyle = K;
-        x.fillRect(25, 10, 4, 2);
-        x.fillRect(27, 12, 4, 2);
-        x.fillRect(28, 14, 3, 2);
-        x.fillRect(29, 16, 2, 2);
-        x.fillStyle = D1;
-        x.fillRect(25, 11, 3, 1);
-        x.fillRect(27, 13, 3, 1);
-        x.fillRect(28, 15, 2, 1);
+        // Nucleo violeta frontal.
+        rect(21, 16, 7, 7, K);
+        rect(22, 17, 5, 5, CORE);
+        rect(24, 17, 2, 2, CORE_HI);
+        rect(22, 21, 5, 1, '#3b0f75');
 
-        // Espinas dorsales.
-        x.fillStyle = K;
-        x.fillRect(22, 4, 2, 2);
-        x.fillRect(24, 7, 2, 2);
-        x.fillRect(24, 17, 2, 2);
-        x.fillStyle = D4;
-        x.fillRect(23, 4, 1, 1);
-        x.fillRect(25, 7, 1, 1);
-        x.fillRect(25, 17, 1, 1);
+        // Paneles laterales y remaches.
+        rect(31, 9, 5, 2, K);
+        rect(32, 10, 3, 1, METAL);
+        rect(34, 22, 4, 2, K);
+        rect(35, 22, 2, 1, D4);
+        rect(7, 11, 1, 1, METAL);
+        rect(18, 19, 1, 1, METAL);
+        rect(29, 20, 1, 1, GOLD);
 
-        // Nucleo/pechera brillante.
-        x.fillStyle = K;
-        x.fillRect(13, 12, 5, 5);
-        x.fillStyle = '#7f1d9b';
-        x.fillRect(14, 13, 3, 3);
-        x.fillStyle = '#e864ff';
-        x.fillRect(15, 13, 1, 1);
+        // Piernas pesadas con aro dorado.
+        rect(13, 25, 4, 5, K);
+        rect(25, 25, 4, 5, K);
+        rect(11, 30, 8, 2, K);
+        rect(23, 30, 8, 2, K);
+        rect(14, 26, 2, 3, METAL_D);
+        rect(26, 26, 2, 3, METAL_D);
+        rect(13, 29, 4, 1, GOLD);
+        rect(25, 29, 4, 1, GOLD);
+        rect(12, 31, 6, 1, METAL);
+        rect(24, 31, 6, 1, METAL);
 
-        // Talones.
-        x.fillStyle = K;
-        x.fillRect(10, 21, 2, 3);
-        x.fillRect(16, 21, 2, 3);
-        x.fillRect(9, 24, 4, 1);
-        x.fillRect(15, 24, 4, 1);
-        x.fillStyle = HORN;
-        x.fillRect(10, 23, 2, 1);
-        x.fillRect(16, 23, 2, 1);
+        // Cristales flotantes del propio sprite.
+        rect(40, 22 - clawLift, 3, 3, K);
+        rect(41, 22 - clawLift, 1, 2, CORE);
+        rect(42, 21 - clawLift, 1, 1, D4);
+        rect(37, 28, 2, 2, K);
+        rect(38, 28, 1, 1, D4);
 
         return off.canvas;
     }
@@ -1054,6 +1005,7 @@
         bossEntranceTimer = 0;
         pipesFadingOut = false;
         bossPipeFadeStarted = false;
+        bossFinalPipeFadeStarted = false;
         rays = [];
         raySpawnTimer = 0;
         screenShake = 0;
@@ -1160,21 +1112,34 @@
     }
 
     function spawnPipe() {
-        // Desde 120 puntos los tubos empiezan a animarse. En fase de rayos son mas anchos.
+        // Desde 120 puntos los tubos empiezan a animarse. En la pelea del jefe suben a dificultad alta.
         let gap = PIPE_GAP;
         let width = PIPE_WIDTH;
         const difficulty = pipeDifficulty01();
+        let topHeight = null;
         if (state === STATE.BOSS && bossPhase === 1) {
-            gap = Math.round((178 + Math.random() * 44) * _hRatio);
+            const bossRamp = clamp01(bossTime / BOSS_RAY_PHASE_AT);
+            gap = Math.round((176 - bossRamp * 18 + Math.random() * 18) * _hRatio);
         } else if (state === STATE.BOSS && bossPhase === 2) {
             width = BOSS_RAY_PIPE_WIDTH;
-            gap = Math.round(280 * _hRatio);
+            gap = Math.round((330 + Math.random() * 38) * _hRatio);
+            const rayTopMin = Math.round(96 * _hRatio);
+            const rayTopMax = Math.max(
+                rayTopMin + 18,
+                Math.min(
+                    GROUND_Y - gap - Math.round(120 * _hRatio),
+                    Math.round(210 * _hRatio)
+                )
+            );
+            topHeight = rayTopMin + Math.random() * Math.max(18, rayTopMax - rayTopMin);
         } else if (difficulty > 0) {
             gap = Math.round((190 - difficulty * 25 + Math.random() * 30) * _hRatio);
         }
         const minTop = _pipeMargin;
         const maxTop = GROUND_Y - gap - _pipeMargin;
-        const topHeight = minTop + Math.random() * Math.max(20, maxTop - minTop);
+        if (topHeight === null) {
+            topHeight = minTop + Math.random() * Math.max(20, maxTop - minTop);
+        }
         pipes.push({
             x: W + 20,
             width: width,
@@ -1188,28 +1153,68 @@
         });
     }
 
-    function spawnRay() {
+    function spawnRay(targetY, sourceOffset, options = {}) {
         const margin = 70;
         const sc = boss.scale;
         const sw = BOSS_SPRITE_W * BOSS_PIXEL * sc;
         const sh = BOSS_SPRITE_H * BOSS_PIXEL * sc;
-        const aimedY = bird.y + (Math.random() - 0.5) * 140;
-        const minBossY = boss.y - sh * 0.34;
-        const maxBossY = boss.y + sh * 0.34;
-        const y = Math.max(margin, Math.min(GROUND_Y - margin, Math.max(minBossY, Math.min(maxBossY, aimedY))));
-        const sx = boss.x - sw * 0.46;
+        const aimedY = targetY !== undefined ? targetY : bird.y + (Math.random() - 0.5) * 150;
+        const y = Math.max(margin, Math.min(GROUND_Y - margin, aimedY));
+        const sx = boss.x - sw * 0.38;
+        const sy = boss.y + (sourceOffset || 0) * sh;
         rays.push({
             sx: sx,
-            sy: y,
+            sy: Math.max(margin, Math.min(GROUND_Y - margin, sy)),
             ex: -30,
             ey: y,
-            telegraphTime: 0.75,
-            fireTime: 0.32,
+            telegraphTime: options.telegraphTime || 0.78,
+            fireTime: options.fireTime || 0.32,
+            thickness: options.thickness || 28,
+            hitRadius: options.hitRadius || 9,
             age: 0,
             phase: 0  // 0 telegraph, 1 firing, 2 dead
         });
-        sfx.rayCharge();
+        if (!options.silent) sfx.rayCharge();
         boss.eyeGlow = 1;
+    }
+
+    function spawnRayBurst() {
+        const finalFury = bossPhase === 3;
+        const count = finalFury ? 2 + Math.floor(Math.random() * 2) : 1;
+        if (count === 1) {
+            spawnRay(bird.y + (Math.random() - 0.5) * 150, -0.08, {
+                telegraphTime: 0.78,
+                fireTime: 0.32,
+                thickness: 28,
+                hitRadius: 9
+            });
+            return;
+        }
+
+        const minY = 80;
+        const maxY = GROUND_Y - 86;
+        const ys = [];
+        for (let tries = 0; tries < 80 && ys.length < count; tries++) {
+            const candidate = minY + Math.random() * (maxY - minY);
+            if (ys.every(y => Math.abs(y - candidate) > 92)) ys.push(candidate);
+        }
+        while (ys.length < count) {
+            ys.push(minY + ((ys.length + 1) / (count + 1)) * (maxY - minY));
+        }
+        ys.sort((a, b) => a - b);
+
+        const offsets = count === 2 ? [-0.13, 0.1] : [-0.16, 0.0, 0.15];
+        sfx.rayCharge();
+        for (let i = 0; i < count; i++) {
+            spawnRay(ys[i], offsets[i], {
+                silent: true,
+                telegraphTime: 0.96,
+                fireTime: 0.36,
+                thickness: 24,
+                hitRadius: 8
+            });
+        }
+        boss.eyeGlow = 1.2;
     }
 
     function spawnConfetti() {
@@ -1269,6 +1274,7 @@
                 bossPhase = 1;
                 bossEntranceTimer = 0;
                 bossPipeFadeStarted = false;
+                bossFinalPipeFadeStarted = false;
                 pipesFadingOut = false;
                 raySpawnTimer = 0.5;
                 screenShake = 1.0;
@@ -1279,11 +1285,16 @@
             // Spawn de tubos (also during ray phase with wide gaps)
             const allowSpawn =
                 state === STATE.PLAYING ||
-                (state === STATE.BOSS && !pipesFadingOut);
+                (state === STATE.BOSS && bossPhase < 3 && !pipesFadingOut);
             if (allowSpawn) {
                 spawnTimer += dt;
                 const difficulty = pipeDifficulty01();
-                const interval = state === STATE.BOSS ? PIPE_INTERVAL * 0.88 : PIPE_INTERVAL * (1 - difficulty * 0.12);
+                let interval = PIPE_INTERVAL * (1 - difficulty * 0.12);
+                if (state === STATE.BOSS && bossPhase === 1) {
+                    interval = PIPE_INTERVAL * 0.76;
+                } else if (state === STATE.BOSS && bossPhase === 2) {
+                    interval = PIPE_INTERVAL * 1.2;
+                }
                 if (spawnTimer >= interval) {
                     spawnTimer = 0;
                     spawnPipe();
@@ -1299,7 +1310,7 @@
                     score++;
                     sfx.score();
                 }
-                if (isPipeAnimationActive() && !(state === STATE.BOSS && bossPhase === 2) && !pipesFadingOut) {
+                if (isPipeAnimationActive() && !(state === STATE.BOSS && bossPhase >= 2) && !pipesFadingOut) {
                     // Pulsacion: el hueco respira. De 120 a 150 sube gradualmente.
                     const difficulty = pipeDifficulty01();
                     p.pulse += dt * (1.8 + difficulty * 0.9);
@@ -1334,14 +1345,14 @@
                     bossTime += dt;
                 }
 
-                // Boss movement: sways during charge; in ray phase it becomes a huge launcher on the right.
+                // Boss movement: sways during charge; in ray phases it becomes a huge launcher on the right.
                 boss.bobPhase += dt * 1.4;
                 boss.movePhase += dt * 0.6;
-                if (bossPhase === 2) {
-                    const anchorX = W - 18;
-                    const anchorY = H * 0.42;
-                    const targetX = anchorX + Math.sin(boss.movePhase * 2.8) * 8;
-                    const targetY = anchorY + Math.sin(boss.bobPhase * 2.2) * 16;
+                if (bossPhase >= 2) {
+                    const anchorX = W + (bossPhase === 3 ? 34 : 22);
+                    const anchorY = H * (bossPhase === 3 ? 0.40 : 0.42);
+                    const targetX = anchorX + Math.sin(boss.movePhase * 2.8) * (bossPhase === 3 ? 14 : 9);
+                    const targetY = anchorY + Math.sin(boss.bobPhase * 2.2) * (bossPhase === 3 ? 22 : 16);
                     boss.x += (targetX - boss.x) * Math.min(1, dt * 4.0);
                     boss.y += (targetY - boss.y) * Math.min(1, dt * 3.4);
                 } else {
@@ -1354,12 +1365,13 @@
                 if (boss.x < W * 0.55) boss.x = W * 0.55;
 
                 boss.wingTimer += dt;
-                const bossWingSpeed = bossPhase === 2 ? 0.075 : 0.11;
+                const bossWingSpeed = bossPhase >= 2 ? (bossPhase === 3 ? 0.055 : 0.075) : 0.11;
                 if (boss.wingTimer > bossWingSpeed) { boss.wingTimer = 0; boss.wing = (boss.wing + 1) % 3; }
 
                 // Boss crece desde el segundo 0 hasta el minuto 1.
                 const growProgress = Math.min(1, bossTime / BOSS_RAY_PHASE_AT);
                 boss.targetScale = 1.0 + growProgress * (BOSS_RAY_SCALE - 1.0);
+                if (bossPhase === 3) boss.targetScale = BOSS_FINAL_SCALE;
                 boss.scale += (boss.targetScale - boss.scale) * dt * 2.5;
 
                 // Tres segundos antes de los rayos desaparece la animacion de tubos.
@@ -1372,9 +1384,10 @@
                     pipesFadingOut = true;
                 }
 
-                // A los 60s: empieza la fase de rayos con tubos mas anchos.
+                // A los 60s: empieza la fase de rayos con tubos mas anchos y mas separados.
                 if (bossTime >= BOSS_RAY_PHASE_AT && bossPhase === 1) {
                     bossPhase = 2;
+                    pipes = [];
                     pipesFadingOut = false;
                     spawnTimer = PIPE_INTERVAL;
                     raySpawnTimer = 0.7;
@@ -1382,23 +1395,49 @@
                     sfx.bossRoar();
                 }
 
-                // Spawnear rayos durante phase 2
-                if (bossPhase === 2) {
+                // Antes de la furia final, los tubos desaparecen por completo.
+                if (
+                    bossPhase === 2 &&
+                    !bossFinalPipeFadeStarted &&
+                    bossTime >= BOSS_FINAL_PHASE_AT - BOSS_FINAL_PIPE_FADE_BEFORE
+                ) {
+                    bossFinalPipeFadeStarted = true;
+                    pipesFadingOut = true;
+                }
+
+                if (bossTime >= BOSS_FINAL_PHASE_AT && bossPhase === 2) {
+                    bossPhase = 3;
+                    pipes = [];
+                    pipesFadingOut = false;
+                    spawnTimer = 0;
+                    raySpawnTimer = 0.55;
+                    screenShake = 1.0;
+                    sfx.bossRoar();
+                }
+
+                // Spawnear rayos durante phases 2 y 3
+                if (bossPhase >= 2) {
                     raySpawnTimer -= dt;
                     if (raySpawnTimer <= 0) {
-                        spawnRay();
-                        raySpawnTimer = 1.4 + Math.random() * 0.6;
+                        spawnRayBurst();
+                        raySpawnTimer = bossPhase === 3
+                            ? 1.85 + Math.random() * 0.65
+                            : 1.45 + Math.random() * 0.65;
                     }
                 }
 
                 // Actualizar rayos existentes
+                let raySoundThisFrame = false;
                 for (const r of rays) {
                     r.age += dt;
                     if (r.phase === 0 && r.age >= r.telegraphTime) {
                         r.phase = 1;
                         r.age = 0;
-                        sfx.rayFire();
-                        screenShake = 0.4;
+                        if (!raySoundThisFrame) {
+                            sfx.rayFire();
+                            raySoundThisFrame = true;
+                        }
+                        screenShake = Math.max(screenShake, bossPhase === 3 ? 0.62 : 0.4);
                     } else if (r.phase === 1 && r.age >= r.fireTime) {
                         r.phase = 2;
                     }
@@ -1444,7 +1483,7 @@
                 // Rayos durante fase 2
                 for (const r of rays) {
                     if (r.phase !== 1) continue;
-                    if (distancePointToSegment(bird.x, bird.y, r.sx, r.sy, r.ex, r.ey) < BIRD_HITBOX_R + 9) {
+                    if (distancePointToSegment(bird.x, bird.y, r.sx, r.sy, r.ex, r.ey) < BIRD_HITBOX_R + (r.hitRadius || 9)) {
                         killBird();
                         break;
                     }
@@ -1727,6 +1766,81 @@
         ctx.restore();
     }
 
+    function bossAttackLevel() {
+        if (!bossActive || state === STATE.WIN) return 0;
+        if (state !== STATE.BOSS && state !== STATE.DEAD && state !== STATE.GAMEOVER) return 0;
+        return clamp01(bossEntranceTimer * 0.75 + bossTime * 0.08);
+    }
+
+    function drawCityAttack(alphaScale = 1) {
+        const attack = bossAttackLevel() * alphaScale;
+        if (attack <= 0.02) return;
+
+        const t = performance.now() / 1000;
+        const baseY = GROUND_Y - 8;
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.9, attack);
+
+        // Tinte lejano integrado al skyline. Bajo contraste para que no parezca overlay.
+        ctx.fillStyle = isNight ? 'rgba(96, 16, 28, 0.18)' : 'rgba(130, 36, 30, 0.12)';
+        ctx.fillRect(0, Math.max(0, baseY - 145), W, 145);
+
+        const firePalette = ['#5b1414', '#a32316', '#ff5a1f', '#ff9c1a', '#ffd34d'];
+        for (let i = 0; i < 10; i++) {
+            const fx = Math.floor(((i * 79 - cityOffset * (0.48 + (i % 3) * 0.08)) % (W + 120) + W + 120) % (W + 120) - 60);
+            const fy = Math.floor(baseY - 10 - (i % 4) * 18);
+            const flicker = Math.floor((Math.sin(t * 9 + i * 1.7) + 1) * 1.5);
+            const scale = 3 + (i % 2);
+            const h = 5 + (i % 3) + flicker;
+
+            // Sombra/brasas adheridas al edificio.
+            ctx.fillStyle = firePalette[0];
+            ctx.fillRect(fx - scale * 2, fy - h * scale + scale, scale * 5, h * scale);
+            ctx.fillStyle = firePalette[1];
+            ctx.fillRect(fx - scale, fy - (h - 1) * scale, scale * 3, (h - 1) * scale);
+
+            // Llama pixel-art por columnas, sin curvas.
+            for (let row = 0; row < h; row++) {
+                const y = fy - row * scale;
+                const rowWidth = Math.max(1, Math.floor((h - row + (i + row + flicker) % 2) / 2));
+                for (let col = -rowWidth; col <= rowWidth; col++) {
+                    const edge = Math.abs(col) + row * 0.55;
+                    const pal = edge < h * 0.28 ? 4 : (edge < h * 0.48 ? 3 : 2);
+                    ctx.fillStyle = firePalette[pal];
+                    ctx.fillRect(fx + col * scale, y, scale, scale);
+                }
+            }
+        }
+
+        // Humo pixel-art: bloques semitransparentes que suben desde el skyline.
+        for (let i = 0; i < 8; i++) {
+            const sx = Math.floor(((i * 103 - cityOffset * 0.32) % (W + 150) + W + 150) % (W + 150) - 75);
+            const sy = Math.floor(baseY - 58 - (i % 4) * 31 - Math.sin(t * 1.2 + i) * 6);
+            const smoke = isNight ? 'rgba(18, 15, 26, 0.36)' : 'rgba(67, 70, 76, 0.28)';
+            const smokeHi = isNight ? 'rgba(50, 42, 62, 0.22)' : 'rgba(105, 106, 110, 0.18)';
+            for (let p = 0; p < 5; p++) {
+                const block = 10 + ((i + p) % 3) * 4;
+                const px0 = sx + p * 10 - 24 + Math.floor(Math.sin(t * 1.6 + i + p) * 3);
+                const py0 = sy - p * 11;
+                ctx.fillStyle = p % 2 === 0 ? smoke : smokeHi;
+                ctx.fillRect(px0, py0, block + 8, block);
+                ctx.fillRect(px0 + 6, py0 - 6, block, block);
+            }
+        }
+
+        // Chispas cuadradas pequenas.
+        for (let i = 0; i < 32; i++) {
+            const sx = Math.floor(((i * 37 - t * 74 - cityOffset * 0.25) % (W + 80) + W + 80) % (W + 80) - 40);
+            const sy = Math.floor(baseY - 145 + ((i * 41 + t * 58) % 125));
+            const blink = (Math.sin(t * 10 + i) + 1) / 2;
+            ctx.globalAlpha = attack * (0.35 + blink * 0.45);
+            ctx.fillStyle = i % 4 === 0 ? '#ff9c1a' : '#ffd34d';
+            ctx.fillRect(sx, sy, i % 5 === 0 ? 3 : 2, i % 5 === 0 ? 3 : 2);
+        }
+
+        ctx.restore();
+    }
+
     // Bushes/trees front layer
     const bushSpriteCache = {};
 
@@ -1944,6 +2058,120 @@
         ctx.restore();
     }
 
+    function drawBossEnergyFX(drawX, drawY, sw, sh, sc) {
+        if (state === STATE.WIN) return;
+        const t = performance.now() / 1000;
+        const phaseBoost = bossPhase >= 2 ? 1 : 0.45;
+
+        // Cristales orbitando alrededor del jefe.
+        ctx.save();
+        for (let i = 0; i < 5; i++) {
+            const a = t * (0.9 + i * 0.08) + i * 1.37;
+            const rx = sw * (0.36 + (i % 2) * 0.08);
+            const ry = sh * (0.22 + (i % 3) * 0.04);
+            const px0 = drawX + Math.cos(a) * rx + Math.sin(t * 2 + i) * 4 * sc;
+            const py0 = drawY + Math.sin(a * 1.25) * ry;
+            const size = (4 + (i % 2) * 2) * sc * phaseBoost;
+            ctx.globalAlpha = 0.35 + phaseBoost * 0.38;
+            ctx.fillStyle = i % 2 === 0 ? '#8b28ff' : '#b45cff';
+            ctx.beginPath();
+            ctx.moveTo(px0, py0 - size);
+            ctx.lineTo(px0 + size * 0.75, py0);
+            ctx.lineTo(px0, py0 + size);
+            ctx.lineTo(px0 - size * 0.75, py0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.globalAlpha = 0.8;
+            ctx.fillStyle = '#f2c8ff';
+            ctx.fillRect(Math.floor(px0), Math.floor(py0 - size * 0.55), Math.max(1, Math.floor(sc)), Math.max(1, Math.floor(sc)));
+        }
+        ctx.restore();
+
+        // Brillos dorados de los tanques superiores.
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 3; i++) {
+            const px0 = drawX - sw * 0.15 + i * sw * 0.12;
+            const py0 = drawY - sh * 0.43 + Math.sin(t * 5 + i) * 2 * sc;
+            const r = (15 + Math.sin(t * 6 + i) * 4) * sc * phaseBoost;
+            const g = ctx.createRadialGradient(px0, py0, 2, px0, py0, r);
+            g.addColorStop(0, 'rgba(255, 209, 76, 0.55)');
+            g.addColorStop(1, 'rgba(255, 209, 76, 0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(px0 - r, py0 - r, r * 2, r * 2);
+        }
+        ctx.restore();
+
+        if (bossPhase >= 2) {
+            ctx.save();
+            ctx.globalAlpha = bossPhase === 3 ? 0.75 : 0.45;
+            ctx.strokeStyle = bossPhase === 3 ? '#d88cff' : '#ff5160';
+            ctx.lineWidth = Math.max(2, 2.5 * sc);
+            for (let i = 0; i < (bossPhase === 3 ? 5 : 3); i++) {
+                const y = drawY - sh * 0.2 + i * sh * 0.1 + Math.sin(t * 8 + i) * 6 * sc;
+                ctx.beginPath();
+                ctx.moveTo(drawX - sw * 0.37, y);
+                ctx.lineTo(
+                    drawX - sw * (0.46 + Math.sin(t * 9 + i) * 0.035),
+                    y + Math.sin(t * 11 + i * 1.8) * 8 * sc
+                );
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+    }
+
+    function drawBossPanelLights(sc) {
+        if (state === STATE.WIN) return;
+
+        const t = performance.now() / 1000;
+        const cell = BOSS_PIXEL * sc;
+        const left = -BOSS_SPRITE_W * cell / 2;
+        const top = -BOSS_SPRITE_H * cell / 2;
+        const charge = bossPhase === 1 ? clamp01(bossTime / BOSS_RAY_PHASE_AT) : 1;
+        const attackBoost = bossPhase >= 2 ? 1.0 : 0.45 + charge * 0.55;
+        const panels = [
+            { x: 12, y: 10, w: 4, h: 1, c: '#5ee8ff', rate: 1.4, seed: 1.1, on: 2 },
+            { x: 18, y: 12, w: 2, h: 1, c: '#ffd34d', rate: 1.1, seed: 2.7, on: 3 },
+            { x: 30, y: 11, w: 2, h: 2, c: '#b45cff', rate: 1.7, seed: 4.3, on: 2 },
+            { x: 35, y: 15, w: 1, h: 3, c: '#ff5a1f', rate: 1.25, seed: 5.8, on: 2 },
+            { x: 16, y: 21, w: 3, h: 1, c: '#ef1f2d', rate: 1.9, seed: 7.2, on: 3 },
+            { x: 24, y: 18, w: 2, h: 2, c: '#8b28ff', rate: 1.55, seed: 8.5, on: 2 },
+            { x: 33, y: 22, w: 2, h: 1, c: '#5ee8ff', rate: 1.35, seed: 9.8, on: 2 },
+            { x: 23, y: 6, w: 2, h: 1, c: '#ffe27a', rate: 1.05, seed: 11.1, on: 3 }
+        ];
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (const p of panels) {
+            const beat = Math.floor(t * p.rate + p.seed + Math.sin(t * 0.9 + p.seed) * 0.7) % 4;
+            const strobe = bossPhase >= 2
+                ? beat !== 0
+                : beat < p.on && Math.sin(t * (2.0 + p.seed * 0.04) + p.seed) > -0.55;
+            const alpha = strobe
+                ? (0.35 + attackBoost * 0.55 + Math.sin(t * 7 + p.seed) * 0.08)
+                : 0.12 + charge * 0.1;
+            const px0 = left + p.x * cell;
+            const py0 = top + p.y * cell;
+            const pw = p.w * cell;
+            const ph = p.h * cell;
+
+            ctx.globalAlpha = 0.45;
+            ctx.fillStyle = '#05030b';
+            ctx.fillRect(px0 - cell * 0.35, py0 - cell * 0.35, pw + cell * 0.7, ph + cell * 0.7);
+
+            ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+            ctx.fillStyle = p.c;
+            ctx.fillRect(px0, py0, pw, ph);
+
+            if (strobe) {
+                ctx.globalAlpha = Math.max(0, Math.min(0.42, alpha * 0.45));
+                ctx.fillRect(px0 - cell, py0 - cell, pw + cell * 2, ph + cell * 2);
+            }
+        }
+        ctx.restore();
+    }
+
     function drawBoss() {
         if (!bossActive && state !== STATE.WIN) return;
         const sc = state === STATE.WIN ? 1.0 : boss.scale;
@@ -1968,6 +2196,8 @@
         ctx.fillStyle = aura;
         ctx.fillRect(drawX - auraR, drawY - auraR, auraR * 2, auraR * 2);
 
+        drawBossEnergyFX(drawX, drawY, sw, sh, sc);
+
         // Sombra debajo del jefe
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.beginPath();
@@ -1979,12 +2209,25 @@
         ctx.translate(drawX, drawY);
         ctx.rotate(tilt);
         ctx.drawImage(bossFrames[boss.wing], -sw / 2, -sh / 2, sw, sh);
+        drawBossPanelLights(sc);
         ctx.restore();
+
+        if (state !== STATE.WIN) {
+            const pulse = 0.55 + Math.sin(performance.now() / 130) * 0.2 + (bossPhase === 3 ? 0.25 : 0);
+            const coreX = drawX + sw * 0.03;
+            const coreY = drawY + sh * 0.04;
+            const coreR = (16 + 10 * pulse) * sc;
+            const coreGlow = ctx.createRadialGradient(coreX, coreY, 2, coreX, coreY, coreR);
+            coreGlow.addColorStop(0, 'rgba(190, 92, 255, ' + Math.min(0.85, pulse) + ')');
+            coreGlow.addColorStop(1, 'rgba(190, 92, 255, 0)');
+            ctx.fillStyle = coreGlow;
+            ctx.fillRect(coreX - coreR, coreY - coreR, coreR * 2, coreR * 2);
+        }
 
         // Brillo en los ojos cuando está cargando un rayo
         if (boss.eyeGlow > 0) {
-            const glowR = 20 + boss.eyeGlow * 18;
-            const eyeX = drawX - sw * 0.32;
+            const glowR = 22 + boss.eyeGlow * 22;
+            const eyeX = drawX - sw * 0.27;
             const eyeY = drawY - sh * 0.08;
             const eyeGlow = ctx.createRadialGradient(eyeX, eyeY, 2, eyeX, eyeY, glowR);
             eyeGlow.addColorStop(0, 'rgba(255, 80, 90, ' + (boss.eyeGlow * 0.9) + ')');
@@ -2019,7 +2262,7 @@
             } else if (r.phase === 1) {
                 // Disparo: rayo grueso brillante, anchura decreciente con el tiempo
                 const t = r.age / r.fireTime;
-                const thickness = 28 * (1 - t * 0.4);
+                const thickness = (r.thickness || 28) * (1 - t * 0.4);
                 ctx.lineCap = 'round';
                 ctx.strokeStyle = 'rgba(255, 80, 100, 0.38)';
                 ctx.lineWidth = thickness * 1.9;
@@ -2138,7 +2381,7 @@
 
     // ---------- UI overlays ----------
     function drawReadyScreen() {
-        drawTextWithShadow('Flappy Bird', W / 2, 130, 56, '#ffd34d');
+        drawTextWithShadow('Adventure Bird', W / 2, 130, 50, '#ffd34d');
 
         const cx = W / 2, cy = 320;
         drawTextWithShadow('¿Listo?', cx, cy - 30, 38, '#ffffff');
@@ -2178,7 +2421,7 @@
         if (state === STATE.PLAYING || state === STATE.DEAD) {
             drawScore(score, W / 2, 80, 64);
         } else if (state === STATE.BOSS) {
-            // Barra de espera: primero carga 1 minuto, luego sobrevives 30s de rayos.
+            // Barra de espera: primero carga 1 minuto, luego sobrevives 60s de rayos.
             const phaseRemaining = bossPhase === 1
                 ? Math.max(0, BOSS_RAY_PHASE_AT - bossTime)
                 : Math.max(0, BOSS_FIGHT_DURATION - bossTime);
@@ -2186,8 +2429,8 @@
             const mm = Math.floor(remaining / 60);
             const ss = Math.floor(remaining % 60);
             const timeStr = mm + ':' + String(ss).padStart(2, '0');
-            // Texto JEFE FINAL
-            drawTextWithShadow(bossPhase === 1 ? 'JEFE FINAL' : 'RAYOS', W / 2, 50, 32, '#ff5160');
+            const label = bossPhase === 1 ? 'JEFE FINAL' : (bossPhase === 2 ? 'RAYOS' : 'FURIA FINAL');
+            drawTextWithShadow(label, W / 2, 50, 32, '#ff5160');
             // Barra
             const barW = 320, barH = 14;
             const bx = W / 2 - barW / 2, by = 78;
@@ -2210,10 +2453,16 @@
             // Score keeps showing during boss fight
             drawScore(score, W / 2, by + barH / 2 + 62, 40);
             // Aviso "RAYOS!" cuando entra phase 2
-            if (bossPhase === 2) {
+            if (bossPhase >= 2) {
                 const pulse = (Math.sin(performance.now() / 120) + 1) / 2;
                 ctx.globalAlpha = 0.65 + pulse * 0.35;
-                drawTextWithShadow('¡ESQUIVA LOS RAYOS!', W / 2, by + barH / 2 + 105, 26, '#ff5160');
+                drawTextWithShadow(
+                    bossPhase === 3 ? '¡2-3 RAYOS!' : '¡ESQUIVA LOS RAYOS!',
+                    W / 2,
+                    by + barH / 2 + 105,
+                    26,
+                    '#ff5160'
+                );
                 ctx.globalAlpha = 1;
             }
         }
@@ -2278,7 +2527,7 @@
             const achievements = [
                 { icon: '🏆', text: 'Dominaste tubos animados (120+ pts)' },
                 { icon: '👑', text: 'Convocaste al jefe (150+ pts)' },
-                { icon: '⚔', text: 'Sobreviviste 1:30 al jefe' },
+                { icon: '⚔', text: 'Sobreviviste 2:00 al jefe' },
                 { icon: '⚡', text: 'Esquivaste todos los rayos' },
                 { icon: '🎖', text: 'Puntuación: ' + score + (score === bestScore ? '  (¡Récord!)' : '') }
             ];
@@ -2470,11 +2719,13 @@
             ctx.save();
             ctx.globalAlpha = 1 - dProg;
             drawCity();
+            drawCityAttack(1 - dProg);
             drawBushes();
             ctx.restore();
             drawDesertScenery(dProg);
         } else {
             drawCity();
+            drawCityAttack();
             drawBushes();
         }
 

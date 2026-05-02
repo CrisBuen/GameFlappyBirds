@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build script for Flappy Bird Android APK
+# Build script for Adventure Bird Android APK
 # Usage: ./build-apk.sh [debug|release]
 
 set -e
@@ -29,11 +29,11 @@ cd android
 if [ "$MODE" = "release" ]; then
     ./gradlew assembleRelease
     APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
-    OUTPUT_NAME="FlappyBird-v0.1-release.apk"
+    OUTPUT_NAME="AdventureBird-v1.0-release.apk"
 else
     ./gradlew assembleDebug
     APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
-    OUTPUT_NAME="FlappyBird-v0.1-debug.apk"
+    OUTPUT_NAME="AdventureBird-v1.0-debug.apk"
 fi
 
 cd "$SCRIPT_DIR"

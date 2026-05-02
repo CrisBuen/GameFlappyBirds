@@ -1,7 +1,7 @@
 {
-  "name": "flappy-birds",
+  "name": "adventure-bird",
   "version": "1.0.0",
-  "description": "",
+  "description": "Adventure Bird pixel art casual game with bosses.",
   "main": "game.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

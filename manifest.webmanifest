@@ -1,7 +1,7 @@
 {
-  "name": "Flappy Bird",
-  "short_name": "Flappy",
-  "description": "Un Flappy Bird pixel art con jefe final, música original y pelea epica.",
+  "name": "Adventure Bird",
+  "short_name": "Adventure",
+  "description": "Un juego pixel art casual con jefes, música original y peleas épicas.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
