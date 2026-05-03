@@ -59,6 +59,8 @@
     const DAY_CYCLE_STAGE_DURATION = 22;
     const DAY_CYCLE_DURATION = DAY_CYCLE_STAGE_DURATION * 4;
     const DAY_CYCLE_TRANSITION = 1.4;
+    const MAX_ZONES = 5;
+    const IMPLEMENTED_ZONES = 2;
 
     // ---------- State ----------
     const STATE = { READY: 0, PLAYING: 1, DEAD: 2, GAMEOVER: 3, BOSS: 4, WIN: 5 };
@@ -94,6 +96,14 @@
         scale: 1.0,         // grows before ray phase
         targetScale: 1.0
     };
+
+    let unlockedZone = parseInt(localStorage.getItem('adventure_unlocked_zone') || '1', 10);
+    if (isNaN(unlockedZone) || unlockedZone < 1) unlockedZone = 1;
+    if (localStorage.getItem('adventure_zone1_cleared') === '1') unlockedZone = Math.max(unlockedZone, 2);
+    unlockedZone = Math.min(IMPLEMENTED_ZONES, Math.max(1, unlockedZone));
+    let selectedZone = parseInt(localStorage.getItem('adventure_selected_zone') || String(unlockedZone), 10);
+    if (isNaN(selectedZone) || selectedZone < 1 || selectedZone > unlockedZone || selectedZone > IMPLEMENTED_ZONES) selectedZone = 1;
+    let currentZone = selectedZone;
 
     let bestScore = parseInt(localStorage.getItem('flappy_best') || '0', 10) || 0;
     let score = 0;
@@ -623,7 +633,39 @@
     }
 
     function isBossMusicLocked() {
-        return bossActive || state === STATE.BOSS || score >= BOSS_FIGHT_SCORE;
+        return currentZone === 1 && (bossActive || state === STATE.BOSS || score >= BOSS_FIGHT_SCORE);
+    }
+
+    function zoneName(zone) {
+        if (zone === 1) return 'Ciudad';
+        if (zone === 2) return 'Desierto';
+        if (zone === 3) return 'Acuatica';
+        return 'Zona ' + zone;
+    }
+
+    function isZoneUnlocked(zone) {
+        return zone >= 1 && zone <= unlockedZone && zone <= IMPLEMENTED_ZONES;
+    }
+
+    function persistSelectedZone() {
+        localStorage.setItem('adventure_selected_zone', String(selectedZone));
+    }
+
+    function unlockZone(zone) {
+        const next = Math.min(IMPLEMENTED_ZONES, Math.max(1, zone));
+        if (next >= 2) localStorage.setItem('adventure_zone1_cleared', '1');
+        if (next > unlockedZone) {
+            unlockedZone = next;
+            localStorage.setItem('adventure_unlocked_zone', String(unlockedZone));
+        }
+    }
+
+    function selectZone(zone, applyNow = true) {
+        if (!isZoneUnlocked(zone)) return false;
+        selectedZone = zone;
+        persistSelectedZone();
+        if (applyNow && state === STATE.READY) currentZone = selectedZone;
+        return true;
     }
 
     function markAudioSourceAttempt(el) {
@@ -975,6 +1017,54 @@
     };
 
     // ---------- Input ----------
+    function zoneSelectorLayout() {
+        const chipW = 52;
+        const chipH = 34;
+        const gap = 8;
+        const totalW = chipW * MAX_ZONES + gap * (MAX_ZONES - 1);
+        const y = Math.min(GROUND_Y - 72, 528);
+        return {
+            x: Math.round(W / 2 - totalW / 2),
+            y: y,
+            chipW: chipW,
+            chipH: chipH,
+            gap: gap
+        };
+    }
+
+    function zoneAtPoint(x, y) {
+        const l = zoneSelectorLayout();
+        if (y < l.y || y > l.y + l.chipH) return 0;
+        for (let i = 0; i < MAX_ZONES; i++) {
+            const zx = l.x + i * (l.chipW + l.gap);
+            if (x >= zx && x <= zx + l.chipW) return i + 1;
+        }
+        return 0;
+    }
+
+    function canvasPointFromEvent(e) {
+        const src = e.touches && e.touches.length ? e.touches[0] : e;
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: (src.clientX - rect.left) * (W / rect.width),
+            y: (src.clientY - rect.top) * (H / rect.height)
+        };
+    }
+
+    function handleCanvasPointer(e) {
+        e.preventDefault();
+        if (state === STATE.READY) {
+            const p = canvasPointFromEvent(e);
+            const zone = zoneAtPoint(p.x, p.y);
+            if (zone) {
+                ensureAudio();
+                if (selectZone(zone, true)) sfx.swoop();
+                return;
+            }
+        }
+        flap();
+    }
+
     function flap() {
         ensureAudio();
         // Kick off background music on first user gesture (browsers require it)
@@ -995,8 +1085,8 @@
         }
     }
 
-    canvas.addEventListener('mousedown', e => { e.preventDefault(); flap(); });
-    canvas.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, { passive: false });
+    canvas.addEventListener('mousedown', handleCanvasPointer);
+    canvas.addEventListener('touchstart', handleCanvasPointer, { passive: false });
     window.addEventListener('keydown', e => {
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
             e.preventDefault();
@@ -1196,6 +1286,7 @@
 
     function resetGame() {
         state = STATE.READY;
+        currentZone = selectedZone;
         score = 0;
         pipes = [];
         spawnTimer = 0;
@@ -1206,8 +1297,8 @@
         gameOverTimer = 0;
         flashAlpha = 0;
         bird.color = SKIN_KEYS[Math.floor(Math.random() * SKIN_KEYS.length)];
-        isNight = Math.random() < 0.3;
-        dayCyclePhase = isNight ? DAY_CYCLE_STAGE_DURATION * 2 : 0;
+        isNight = currentZone === 1 && Math.random() < 0.3;
+        dayCyclePhase = currentZone === 2 ? DAY_CYCLE_STAGE_DURATION * 1.4 : (isNight ? DAY_CYCLE_STAGE_DURATION * 2 : 0);
         rebuildBirdSprites();
         // Reset boss state
         bossActive = false;
@@ -1506,13 +1597,13 @@
 
         if (state === STATE.PLAYING || state === STATE.BOSS) {
             // Trigger musica del jefe junto con la aparicion del jefe.
-            if (!bossMusicSwitched && score >= BOSS_MUSIC_SCORE && currentTrack === 'main' && musicPlaying) {
+            if (currentZone === 1 && !bossMusicSwitched && score >= BOSS_MUSIC_SCORE && currentTrack === 'main' && musicPlaying) {
                 bossMusicSwitched = true;
                 crossfadeTo('boss', 1500);
             }
 
             // Trigger pelea del jefe a 150 puntos.
-            if (state === STATE.PLAYING && score >= BOSS_FIGHT_SCORE) {
+            if (currentZone === 1 && state === STATE.PLAYING && score >= BOSS_FIGHT_SCORE) {
                 state = STATE.BOSS;
                 bossActive = true;
                 bossTime = 0;
@@ -1595,7 +1686,7 @@
                 boss.bobPhase += dt * 1.4;
                 boss.movePhase += dt * 0.6;
                 if (bossPhase >= 2) {
-                    const anchorX = W + (bossPhase === 3 ? 34 : 22);
+                    const anchorX = W + (bossPhase === 3 ? 112 : 88);
                     const anchorY = H * (bossPhase === 3 ? 0.40 : 0.42);
                     const targetX = anchorX + Math.sin(boss.movePhase * 2.8) * (bossPhase === 3 ? 14 : 9);
                     const targetY = anchorY + Math.sin(boss.bobPhase * 2.2) * (bossPhase === 3 ? 22 : 16);
@@ -1694,6 +1785,8 @@
                 if (bossTime >= BOSS_FIGHT_DURATION) {
                     state = STATE.WIN;
                     winTimer = 0;
+                    unlockZone(2);
+                    selectZone(2, false);
                     pipes = [];
                     rays = [];
                     spawnConfetti();
@@ -2441,6 +2534,10 @@
         return state === STATE.WIN ? clamp01((winTimer - 1.15) / 2.2) : 0;
     }
 
+    function zoneDesertLevel() {
+        return Math.max(currentZone === 2 ? 1 : 0, desertProgress());
+    }
+
     function drawDesertScenery(alpha) {
         if (alpha <= 0) return;
         const baseY = GROUND_Y - 6;
@@ -2578,7 +2675,7 @@
         drawPipeSegment(p.x, floating ? p.topStart : 0, p.top, pWidth, floating, true);
         drawPipeSegment(p.x, p.bottom, floating ? p.bottomEnd : GROUND_Y, pWidth, true, floating);
 
-        if (state === STATE.WIN) drawDesertPipeOrnaments(p.x, p.top, p.bottom, pWidth);
+        if (currentZone === 2 || state === STATE.WIN) drawDesertPipeOrnaments(p.x, p.top, p.bottom, pWidth);
         ctx.restore();
     }
 
@@ -2934,7 +3031,7 @@
     }
 
     function drawGround() {
-        const desert = desertProgress();
+        const desert = zoneDesertLevel();
         // Sand base
         const g = ctx.createLinearGradient(0, GROUND_Y, 0, H);
         if (desert > 0.5) {
@@ -3013,6 +3110,71 @@
     }
 
     // ---------- UI overlays ----------
+    function drawZoneLock(cx, cy) {
+        ctx.save();
+        ctx.strokeStyle = '#d5dbe4';
+        ctx.fillStyle = '#d5dbe4';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy - 2, 6, Math.PI, 0, false);
+        ctx.stroke();
+        roundedRect(cx - 7, cy - 1, 14, 11, 2);
+        ctx.fill();
+        ctx.fillStyle = '#202832';
+        ctx.fillRect(cx - 1, cy + 3, 2, 4);
+        ctx.restore();
+    }
+
+    function drawZoneSelector() {
+        const l = zoneSelectorLayout();
+        ctx.save();
+        ctx.font = 'bold 15px "Segoe UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#3a2a1a';
+        ctx.fillStyle = '#ffffff';
+        const label = 'Zona actual: ' + selectedZone + ' - ' + zoneName(selectedZone);
+        ctx.strokeText(label, W / 2, l.y - 22);
+        ctx.fillText(label, W / 2, l.y - 22);
+
+        for (let i = 0; i < MAX_ZONES; i++) {
+            const zone = i + 1;
+            const x = l.x + i * (l.chipW + l.gap);
+            const open = isZoneUnlocked(zone);
+            const selected = zone === selectedZone;
+            roundedRect(x, l.y, l.chipW, l.chipH, 8);
+            const bg = ctx.createLinearGradient(0, l.y, 0, l.y + l.chipH);
+            if (selected) {
+                bg.addColorStop(0, '#ffd34d');
+                bg.addColorStop(1, '#f57c00');
+            } else if (open) {
+                bg.addColorStop(0, '#f5f1cf');
+                bg.addColorStop(1, '#b9d45f');
+            } else {
+                bg.addColorStop(0, 'rgba(43, 50, 58, 0.92)');
+                bg.addColorStop(1, 'rgba(26, 30, 36, 0.92)');
+            }
+            ctx.fillStyle = bg;
+            ctx.fill();
+            ctx.strokeStyle = selected ? '#7a3e00' : (open ? '#4b6a2b' : '#6b7280');
+            ctx.lineWidth = selected ? 3 : 2;
+            ctx.stroke();
+
+            ctx.font = open ? 'bold 18px "Segoe UI", sans-serif' : 'bold 16px "Segoe UI", sans-serif';
+            ctx.fillStyle = open ? '#3a2a1a' : '#d5dbe4';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            if (open) {
+                ctx.fillText(String(zone), x + l.chipW / 2, l.y + l.chipH / 2 + 1);
+            } else {
+                ctx.fillText(String(zone), x + l.chipW / 2 - 9, l.y + l.chipH / 2 + 1);
+                drawZoneLock(x + l.chipW / 2 + 12, l.y + l.chipH / 2 - 1);
+            }
+        }
+        ctx.restore();
+    }
+
     function drawReadyScreen() {
         drawTextWithShadow('Adventure Bird', W / 2, 130, 50, '#ffd34d');
 
@@ -3048,6 +3210,7 @@
         if (bestScore > 0) {
             drawTextWithShadow('Récord: ' + bestScore, W / 2, cy + 170, 20, '#ffd34d');
         }
+        drawZoneSelector();
     }
 
     function drawHUDScore() {
@@ -3127,7 +3290,7 @@
         drawTextWithShadow('¡VICTORIA!', 0, 0, 64, '#ffd34d');
         ctx.restore();
 
-        drawTextWithShadow(winTimer > 1.2 ? 'Rumbo al desierto' : 'Has derrotado al jefe final', W / 2, 185, 20, '#ffffff');
+        drawTextWithShadow(winTimer > 1.2 ? 'Zona 2 desbloqueada' : 'Has derrotado al jefe final', W / 2, 185, 20, '#ffffff');
 
         // Panel de logros (aparece tras 0.8s)
         if (winTimer > 0.8) {
@@ -3197,7 +3360,7 @@
             ctx.stroke();
             ctx.restore();
             ctx.globalAlpha = 0.7 + hover * 0.3;
-            drawTextWithShadow('▶ JUGAR DE NUEVO', W / 2, by + bh / 2 + 1, 20, '#ffffff');
+            drawTextWithShadow('▶ IR A ZONA 2', W / 2, by + bh / 2 + 1, 20, '#ffffff');
             ctx.globalAlpha = 1;
         }
     }
@@ -3343,7 +3506,7 @@
             ctx.translate(sx, sy);
         }
 
-        const dProg = desertProgress();
+        const dProg = zoneDesertLevel();
         drawBackground(1 - dProg);
         if (dProg > 0) {
             drawBossStorm(1 - dProg);
