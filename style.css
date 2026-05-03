@@ -105,7 +105,7 @@ body {
     position: absolute;
     top: 60px;
     left: 10px;
-    width: 200px;
+    width: 220px;
     padding: 12px 14px;
     background: rgba(20, 30, 40, 0.88);
     border: 1px solid rgba(255,255,255,0.12);
@@ -224,7 +224,8 @@ body {
     transform: scale(0.92);
 }
 
-#vol-slider {
+#vol-slider,
+#game-vol-slider {
     flex: 1;
     -webkit-appearance: none;
     appearance: none;
@@ -234,7 +235,11 @@ body {
     outline: none;
     cursor: pointer;
 }
-#vol-slider::-webkit-slider-thumb {
+#game-vol-slider {
+    background: linear-gradient(to right, #72d47f 0%, #72d47f var(--vol, 70%), rgba(255,255,255,0.18) var(--vol, 70%), rgba(255,255,255,0.18) 100%);
+}
+#vol-slider::-webkit-slider-thumb,
+#game-vol-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 16px;
@@ -245,13 +250,20 @@ body {
     cursor: pointer;
     box-shadow: 0 1px 4px rgba(0,0,0,0.5);
 }
-#vol-slider::-moz-range-thumb {
+#game-vol-slider::-webkit-slider-thumb {
+    border-color: #72d47f;
+}
+#vol-slider::-moz-range-thumb,
+#game-vol-slider::-moz-range-thumb {
     width: 16px;
     height: 16px;
     border-radius: 50%;
     background: #fff;
     border: 2px solid #ffd34d;
     cursor: pointer;
+}
+#game-vol-slider::-moz-range-thumb {
+    border-color: #72d47f;
 }
 
 .vp-play-btn {
@@ -272,6 +284,14 @@ body {
 .vp-play-btn.playing {
     background: linear-gradient(180deg, #4caf50 0%, #2e7d32 100%);
     border-color: rgba(165, 230, 165, 0.6);
+}
+.vp-secondary-btn {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.18);
+    font-size: 12px;
+}
+.vp-secondary-btn:hover {
+    background: rgba(255,255,255,0.16);
 }
 
 .vp-status {

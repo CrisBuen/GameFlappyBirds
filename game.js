@@ -36,7 +36,7 @@
     const _hRatio = H / 720;
     const PIPE_GAP = Math.round(165 * _hRatio);
     const PIPE_WIDTH = 72;
-    const BOSS_RAY_PIPE_WIDTH = 108;
+    const BOSS_RAY_PIPE_WIDTH = 92;
     const PIPE_INTERVAL = 1.45;
     const _pipeMargin = Math.round(80 * _hRatio);
     const PIPE_MIN_TOP = _pipeMargin;
@@ -75,6 +75,7 @@
     let bossFinalPipeFadeStarted = false;
     let rays = [];             // {sx, sy, ex, ey, telegraphTime, fireTime, age, phase}
     let raySpawnTimer = 0;
+    let stormThunderTimer = 0;
     let screenShake = 0;
     let winTimer = 0;
     let confetti = [];
@@ -99,10 +100,9 @@
     let pipes = [];
     let spawnTimer = 0;
     let groundOffset = 0;
-    let cloudOffset = 0;
     let cityOffset = 0;
-    let bushOffset = 0;
     let starsOffset = 0;
+    let backgroundCameraX = 0;
     let gameOverTimer = 0;
     let flashAlpha = 0;
     let isNight = Math.random() < 0.3; // 30% chance night theme per run
@@ -392,172 +392,189 @@
     }
     const pipeSprite = buildPipeSprite();
 
-    // ---------- Pixel-art boss sprite ----------
-    // Sprite pixel-art dibujado con primitivas, 3 frames de aleteo. Renderizado a 4x.
-    const BOSS_SPRITE_W = 46;
-    const BOSS_SPRITE_H = 36;
+    // ---------- Modular pixel-art boss ----------
+    // Zone 1 boss is assembled from separate parts so every module can move/react.
+    const BOSS_SPRITE_W = 56;
+    const BOSS_SPRITE_H = 44;
     const BOSS_PIXEL = 4;
 
-    function drawBossSprite(wingFrame) {
-        const off = makePixelCanvas(BOSS_SPRITE_W, BOSS_SPRITE_H);
+    function buildBossPart(w, h, drawFn) {
+        const off = makePixelCanvas(w, h);
         const x = off.ctx;
-
-        // Paleta del nuevo jefe: armadura morada mecanica, tanques dorados y ojos rojos.
-        const K = '#05030b';
-        const D0 = '#12071f';
-        const D1 = '#25103b';
-        const D2 = '#411b65';
-        const D3 = '#682aa0';
-        const D4 = '#a84ee6';
-        const HI = '#e5a7ff';
-        const RED = '#ef1f2d';
-        const RED_HI = '#ff847f';
-        const GOLD = '#f0b72e';
-        const GOLD_HI = '#ffe27a';
-        const GOLD_D = '#8a5513';
-        const METAL = '#9aa6bc';
-        const METAL_D = '#3b4058';
-        const CORE = '#8b28ff';
-        const CORE_HI = '#f2c8ff';
-        const clawLift = wingFrame === 0 ? -2 : (wingFrame === 2 ? 2 : 0);
-
-        function rect(px0, py0, w, h, c) {
+        function rect(px0, py0, rw, rh, c) {
             x.fillStyle = c;
-            x.fillRect(px0, py0, w, h);
+            x.fillRect(px0, py0, rw, rh);
         }
         function row(py0, l, r, c) {
             x.fillStyle = c;
             x.fillRect(l, py0, r - l + 1, 1);
         }
-        function tank(px0, py0, w, h) {
-            rect(px0 - 1, py0, w + 2, h, K);
-            rect(px0, py0 + 1, w, h - 2, GOLD);
-            rect(px0 + 1, py0 + 1, Math.max(1, Math.floor(w / 3)), h - 3, GOLD_HI);
-            rect(px0 + w - 2, py0 + 1, 2, h - 2, GOLD_D);
-            rect(px0, py0 + h - 2, w, 2, GOLD_D);
-            rect(px0 + 1, py0 - 1, w - 2, 1, METAL);
-        }
-
-        // Cola/tenaza posterior animada, similar al apendice curvo del diseno nuevo.
-        const tailRows = [
-            [10 + clawLift, 33, 39], [11 + clawLift, 34, 42], [12 + clawLift, 35, 44],
-            [13 + clawLift, 36, 45], [14 + clawLift, 37, 45], [15 + clawLift, 38, 44],
-            [16 + clawLift, 39, 43], [17 + clawLift, 40, 42]
-        ];
-        for (const [py0, l, r] of tailRows) row(py0, l, r, K);
-        row(11 + clawLift, 35, 40, D1);
-        row(12 + clawLift, 36, 42, D2);
-        row(13 + clawLift, 37, 43, D3);
-        row(14 + clawLift, 38, 43, D2);
-        row(15 + clawLift, 39, 42, D1);
-        rect(42, 10 + clawLift, 2, 3, D4);
-        rect(41, 12 + clawLift, 1, 1, HI);
-
-        // Cuerpo ovalado blindado.
-        const bodyRows = [
-            [7, 14, 25], [8, 10, 30], [9, 8, 33], [10, 6, 35],
-            [11, 5, 36], [12, 4, 37], [13, 3, 38], [14, 3, 39],
-            [15, 3, 39], [16, 3, 39], [17, 4, 38], [18, 4, 38],
-            [19, 5, 37], [20, 6, 36], [21, 7, 35], [22, 8, 34],
-            [23, 10, 32], [24, 12, 30], [25, 15, 27]
-        ];
-        for (const [py0, l, r] of bodyRows) row(py0, l - 1, r + 1, K);
-        for (const [py0, l, r] of bodyRows) row(py0, l, r, D2);
-
-        // Sombras, placas y brillos de armadura.
-        row(10, 8, 17, D3);
-        row(11, 7, 20, D3);
-        row(12, 8, 21, D4);
-        row(13, 11, 22, D3);
-        row(9, 18, 29, D1);
-        row(20, 9, 34, D1);
-        row(21, 11, 32, D0);
-        row(22, 14, 29, D0);
-        rect(17, 10, 2, 2, HI);
-        rect(22, 13, 5, 1, HI);
-        rect(28, 16, 7, 1, D4);
-        rect(32, 18, 4, 1, HI);
-
-        // Placas mecanicas negras y lineas de detalle.
-        rect(3, 14, 3, 6, K);
-        rect(6, 13, 2, 8, K);
-        rect(9, 19, 8, 1, K);
-        rect(20, 23, 8, 1, K);
-        rect(27, 12, 2, 9, K);
-        rect(31, 14, 6, 1, K);
-        rect(32, 17, 5, 1, K);
-        rect(11, 11, 8, 1, K);
-        rect(15, 8, 5, 1, METAL_D);
-        rect(16, 7, 4, 1, METAL);
-
-        // Tanques dorados superiores.
-        tank(13, 1, 5, 8);
-        tank(22, 0, 5, 9);
-        tank(32, 2, 5, 7);
-
-        // Ojos rojos cuadrados.
-        rect(5, 14, 7, 5, K);
-        rect(13, 14, 6, 5, K);
-        rect(6, 15, 5, 3, RED);
-        rect(14, 15, 4, 3, RED);
-        rect(9, 15, 1, 2, RED_HI);
-        rect(16, 15, 1, 2, RED_HI);
-        rect(6, 18, 5, 1, '#7f0b16');
-        rect(14, 18, 4, 1, '#7f0b16');
-
-        // Nucleo violeta frontal.
-        rect(21, 16, 7, 7, K);
-        rect(22, 17, 5, 5, CORE);
-        rect(24, 17, 2, 2, CORE_HI);
-        rect(22, 21, 5, 1, '#3b0f75');
-
-        // Paneles laterales y remaches.
-        rect(31, 9, 5, 2, K);
-        rect(32, 10, 3, 1, METAL);
-        rect(34, 22, 4, 2, K);
-        rect(35, 22, 2, 1, D4);
-        rect(7, 11, 1, 1, METAL);
-        rect(18, 19, 1, 1, METAL);
-        rect(29, 20, 1, 1, GOLD);
-
-        // Piernas pesadas con aro dorado.
-        rect(13, 25, 4, 5, K);
-        rect(25, 25, 4, 5, K);
-        rect(11, 30, 8, 2, K);
-        rect(23, 30, 8, 2, K);
-        rect(14, 26, 2, 3, METAL_D);
-        rect(26, 26, 2, 3, METAL_D);
-        rect(13, 29, 4, 1, GOLD);
-        rect(25, 29, 4, 1, GOLD);
-        rect(12, 31, 6, 1, METAL);
-        rect(24, 31, 6, 1, METAL);
-
-        // Cristales flotantes del propio sprite.
-        rect(40, 22 - clawLift, 3, 3, K);
-        rect(41, 22 - clawLift, 1, 2, CORE);
-        rect(42, 21 - clawLift, 1, 1, D4);
-        rect(37, 28, 2, 2, K);
-        rect(38, 28, 1, 1, D4);
-
+        drawFn(rect, row, x);
         return off.canvas;
     }
 
-    let bossFrames = null;
-    function rebuildBossSprites() {
-        bossFrames = [drawBossSprite(0), drawBossSprite(1), drawBossSprite(2)];
+    const BOSS_COLORS = {
+        k: '#05030b',
+        d0: '#10061b',
+        d1: '#231036',
+        d2: '#3b195e',
+        d3: '#64269b',
+        d4: '#a44ee4',
+        hi: '#f0b6ff',
+        red: '#ef1f2d',
+        redHi: '#ff9a86',
+        blue: '#2678ff',
+        blueHi: '#7ee8ff',
+        gold: '#f0b72e',
+        goldHi: '#ffe27a',
+        goldDark: '#8a5513',
+        metal: '#a9b2c6',
+        metalDark: '#3b4058',
+        core: '#8b28ff',
+        coreHi: '#f2c8ff'
+    };
+
+    function buildBossBodyPart() {
+        const c = BOSS_COLORS;
+        return buildBossPart(46, 34, (rect, row) => {
+            const bodyRows = [
+                [3, 18, 28], [4, 12, 35], [5, 8, 40], [6, 5, 43],
+                [7, 3, 44], [8, 2, 45], [9, 1, 45], [10, 0, 45],
+                [11, 0, 45], [12, 0, 45], [13, 0, 45], [14, 0, 45],
+                [15, 0, 45], [16, 0, 45], [17, 0, 45], [18, 1, 45],
+                [19, 1, 45], [20, 2, 44], [21, 3, 43], [22, 4, 42],
+                [23, 6, 40], [24, 8, 38], [25, 11, 35], [26, 15, 31],
+                [27, 20, 26]
+            ];
+            for (const [py, l, r] of bodyRows) row(py, Math.max(0, l - 1), Math.min(45, r + 1), c.k);
+            for (const [py, l, r] of bodyRows) row(py, l, r, c.d2);
+
+            row(5, 15, 33, c.d4);
+            row(6, 10, 38, c.d3);
+            row(7, 7, 42, c.d4);
+            row(8, 6, 43, c.d3);
+            row(9, 14, 39, c.d4);
+            row(10, 22, 41, c.hi);
+            row(11, 28, 43, c.d3);
+            row(18, 5, 42, c.d1);
+            row(19, 6, 42, c.d0);
+            row(21, 10, 38, c.d0);
+            row(23, 14, 34, c.d1);
+
+            rect(4, 12, 13, 9, c.k);
+            rect(6, 13, 9, 7, c.metalDark);
+            rect(19, 12, 8, 1, c.k);
+            rect(23, 13, 2, 8, c.k);
+            rect(29, 10, 3, 12, c.k);
+            rect(33, 12, 7, 1, c.k);
+            rect(34, 16, 6, 1, c.k);
+            rect(11, 9, 10, 1, c.k);
+            rect(18, 6, 7, 1, c.metalDark);
+            rect(20, 5, 5, 1, c.metal);
+            rect(8, 10, 1, 1, c.metal);
+            rect(17, 21, 2, 1, c.metal);
+            rect(31, 22, 1, 1, c.gold);
+            rect(38, 20, 3, 2, c.k);
+            rect(39, 20, 1, 1, c.d4);
+            rect(24, 9, 10, 2, 'rgba(255,255,255,0.10)');
+        });
     }
-    rebuildBossSprites();
+
+    function buildBossFinPart() {
+        const c = BOSS_COLORS;
+        return buildBossPart(30, 30, (rect, row) => {
+            const rows = [
+                [2, 4, 13], [3, 4, 17], [4, 5, 21], [5, 6, 24],
+                [6, 8, 26], [7, 10, 28], [8, 12, 29], [9, 13, 29],
+                [10, 13, 28], [11, 12, 28], [12, 11, 27], [13, 10, 26],
+                [14, 9, 25], [15, 8, 24], [16, 7, 23], [17, 6, 22],
+                [18, 5, 20], [19, 4, 18], [20, 4, 16], [21, 3, 14],
+                [22, 2, 11], [23, 1, 8]
+            ];
+            for (const [py, l, r] of rows) row(py, Math.max(0, l - 1), Math.min(29, r + 1), c.k);
+            for (const [py, l, r] of rows) row(py, l, r, c.d2);
+            row(5, 9, 23, c.d4);
+            row(6, 11, 25, c.d3);
+            row(8, 14, 28, c.d4);
+            row(10, 15, 27, c.d1);
+            row(13, 12, 25, c.d0);
+            row(16, 9, 22, c.d1);
+            row(19, 6, 17, c.d0);
+            rect(11, 6, 13, 1, c.k);
+            rect(13, 9, 13, 1, c.k);
+            rect(11, 13, 13, 1, c.k);
+            rect(8, 17, 10, 1, c.k);
+            rect(14, 5, 4, 1, c.hi);
+            rect(18, 8, 6, 1, c.hi);
+            rect(8, 20, 4, 1, c.d4);
+            rect(21, 11, 2, 2, c.metal);
+        });
+    }
+
+    function buildBossTubePart() {
+        const c = BOSS_COLORS;
+        return buildBossPart(8, 12, (rect) => {
+            rect(1, 0, 6, 1, c.metal);
+            rect(0, 1, 8, 10, c.k);
+            rect(1, 2, 6, 8, c.gold);
+            rect(2, 2, 2, 7, c.goldHi);
+            rect(5, 2, 2, 8, c.goldDark);
+            rect(1, 8, 6, 2, c.goldDark);
+            rect(0, 5, 8, 1, c.k);
+            rect(2, 1, 4, 1, '#fff0a6');
+            rect(1, 10, 6, 1, c.metalDark);
+        });
+    }
+
+    function buildBossLegPart() {
+        const c = BOSS_COLORS;
+        return buildBossPart(9, 9, (rect) => {
+            rect(3, 0, 3, 5, c.k);
+            rect(4, 1, 1, 4, c.metalDark);
+            rect(2, 4, 5, 2, c.gold);
+            rect(1, 6, 7, 2, c.k);
+            rect(2, 7, 5, 1, c.metal);
+        });
+    }
+
+    const bossParts = {
+        body: buildBossBodyPart(),
+        fin: buildBossFinPart(),
+        tube: buildBossTubePart(),
+        leg: buildBossLegPart()
+    };
+
+    function drawBossPart(part, x, y, sc, rotation = 0, alpha = 1) {
+        const unit = BOSS_PIXEL * sc;
+        ctx.save();
+        ctx.translate(x * unit, y * unit);
+        ctx.rotate(rotation);
+        ctx.globalAlpha *= alpha;
+        ctx.drawImage(part, -part.width * unit / 2, -part.height * unit / 2, part.width * unit, part.height * unit);
+        ctx.restore();
+    }
 
     // ---------- Audio: SFX (Web Audio API) ----------
     let audioCtx = null;
     let masterGain = null;
+    const DEFAULT_GAME_VOLUME = 70;
+    let gameVolume = parseInt(localStorage.getItem('flappy_game_volume') || String(DEFAULT_GAME_VOLUME), 10);
+    if (isNaN(gameVolume) || gameVolume < 0 || gameVolume > 100) gameVolume = DEFAULT_GAME_VOLUME;
+
+    function targetGameLevel() {
+        return (Math.max(0, Math.min(100, gameVolume)) / 100) * 0.65;
+    }
+
+    function applyGameVolume() {
+        if (masterGain) masterGain.gain.value = targetGameLevel();
+    }
 
     function ensureAudio() {
         if (!audioCtx) {
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 masterGain = audioCtx.createGain();
-                masterGain.gain.value = 0.55;
+                masterGain.gain.value = targetGameLevel();
                 masterGain.connect(audioCtx.destination);
             } catch (e) { audioCtx = null; }
         }
@@ -568,6 +585,12 @@
     // Dos pistas: principal (main) y jefe (boss). Crossfade al cambiar.
     const musicEl = document.getElementById('bg-music');     // pista principal
     const bossMusicEl = document.getElementById('boss-music'); // pista del jefe
+    const mainTracks = [
+        { title: 'Principal', src: 'assets/music.mp3' },
+        { title: 'Cattails Echo World 1', src: 'assets/Cattails’ Echo Worl1.mp3', fallbackSrc: 'www/assets/Cattails’ Echo Worl1.mp3' },
+        { title: 'Startlight Brass World 1', src: 'assets/Startlight Brass World1.mp3', fallbackSrc: 'www/assets/Startlight Brass World1.mp3' }
+    ];
+    const bossTrack = { title: 'Boss · Harmonica Finals', src: 'assets/boss.mp3', loop: true };
 
     let musicPlaying = false;
     let musicMuted = false;
@@ -586,10 +609,39 @@
     musicMuted = localStorage.getItem('flappy_music_muted') === '1';
 
     let currentTrack = 'main'; // 'main' | 'boss'
+    let currentMainTrackIndex = parseInt(localStorage.getItem('flappy_music_track') || '0', 10);
+    if (isNaN(currentMainTrackIndex) || currentMainTrackIndex < 0 || currentMainTrackIndex >= mainTracks.length) currentMainTrackIndex = 0;
     let crossfadeTimer = null;
+    let audioSourceVersion = 0;
 
     function activeMusicEl() {
         return currentTrack === 'boss' ? bossMusicEl : musicEl;
+    }
+
+    function activeMusicTitle() {
+        return currentTrack === 'boss' ? bossTrack.title : mainTracks[currentMainTrackIndex].title;
+    }
+
+    function isBossMusicLocked() {
+        return bossActive || state === STATE.BOSS || score >= BOSS_FIGHT_SCORE;
+    }
+
+    function markAudioSourceAttempt(el) {
+        const requestId = String(++audioSourceVersion);
+        el.dataset.audioRequestId = requestId;
+        return requestId;
+    }
+
+    function configureAudioSource(el, track) {
+        const requestId = markAudioSourceAttempt(el);
+        el.preload = 'auto';
+        el.loop = track.loop === true;
+        el.dataset.trackTitle = track.title;
+        el.dataset.fallbackSrc = track.fallbackSrc || '';
+        el.dataset.fallbackPending = '0';
+        el.setAttribute('src', track.src);
+        el.load();
+        return requestId;
     }
 
     function volToLevel(v) {
@@ -611,8 +663,43 @@
         other.volume = 0;
     }
 
+    function handleMusicPlayError(el, error, requestId) {
+        if (requestId && el.dataset.audioRequestId !== String(requestId)) return;
+        const name = error && error.name ? error.name : 'Error';
+        const message = error && error.message ? error.message : 'no disponible';
+
+        if (name === 'NotAllowedError') {
+            console.warn('[Música] play() rechazado:', name, message);
+            musicLoadError = 'Bloqueado: haz clic en el juego primero';
+            if (typeof updateVolumeUI === 'function') updateVolumeUI();
+            return;
+        }
+
+        // Si hay fallback activo o disponible, el error pertenece al src anterior.
+        if (el.dataset.fallbackSrc || el.dataset.fallbackPending === '1') return;
+        if (el !== activeMusicEl()) return;
+
+        console.warn('[Música] play() rechazado:', name, message);
+        musicLoadError = 'Error cargando ' + (el.dataset.trackTitle || 'música') + '.';
+        if (typeof updateVolumeUI === 'function') updateVolumeUI();
+    }
+
     function attachMusicListeners(el, label) {
         el.addEventListener('error', () => {
+            const fallbackSrc = el.dataset.fallbackSrc;
+            if (fallbackSrc) {
+                el.dataset.fallbackSrc = '';
+                el.dataset.fallbackPending = '1';
+                const fallbackRequestId = markAudioSourceAttempt(el);
+                musicLoadError = null;
+                el.setAttribute('src', fallbackSrc);
+                el.load();
+                if (typeof updateVolumeUI === 'function') updateVolumeUI();
+                if (el === activeMusicEl() && musicPlaying) {
+                    el.play().catch(error => handleMusicPlayError(el, error, fallbackRequestId));
+                }
+                return;
+            }
             const errCodes = { 1: 'ABORTED', 2: 'NETWORK', 3: 'DECODE', 4: 'NOT_SUPPORTED' };
             const code = el.error ? el.error.code : '?';
             musicLoadError = 'Error cargando ' + label + ' (' + (errCodes[code] || code) + '). Sirve por HTTP o revisa la ruta.';
@@ -623,24 +710,46 @@
             console.log('[' + label + '] Lista (' + el.duration.toFixed(2) + 's)');
         });
         el.addEventListener('playing', () => {
-            if (el === activeMusicEl()) musicPlaying = true;
+            el.dataset.fallbackPending = '0';
+            if (el === activeMusicEl()) {
+                musicPlaying = true;
+                musicLoadError = null;
+            }
             if (typeof updateVolumeUI === 'function') updateVolumeUI();
         });
-        // Loop sin gap manual + red de seguridad nativa
+        // El loop manual solo aplica a pistas que deben repetirse, como el boss.
         el.addEventListener('timeupdate', () => {
-            if (el.duration && el.currentTime >= el.duration - 0.06) el.currentTime = 0;
+            if (el.loop && el.duration && el.currentTime >= el.duration - 0.06) el.currentTime = 0;
         });
-        el.addEventListener('ended', () => { el.currentTime = 0; el.play().catch(() => {}); });
+        el.addEventListener('ended', () => {
+            if (el === bossMusicEl) {
+                if (currentTrack === 'boss' || isBossMusicLocked()) {
+                    currentTrack = 'boss';
+                    el.loop = true;
+                    el.currentTime = 0;
+                    if (musicPlaying && !musicMuted) {
+                        el.play().catch(error => handleMusicPlayError(el, error, el.dataset.audioRequestId));
+                    }
+                    if (typeof updateVolumeUI === 'function') updateVolumeUI();
+                }
+                return;
+            }
+            if (el === musicEl && currentTrack === 'main' && musicPlaying) {
+                nextMainTrack();
+                return;
+            }
+            if (el.loop) {
+                el.currentTime = 0;
+                el.play().catch(error => handleMusicPlayError(el, error, el.dataset.audioRequestId));
+            }
+        });
     }
     attachMusicListeners(musicEl, 'Música');
     attachMusicListeners(bossMusicEl, 'Boss');
 
     // Asignación robusta del src + carga explícita
-    musicEl.preload = 'auto'; musicEl.loop = true;
-    musicEl.setAttribute('src', 'assets/music.mp3'); musicEl.load();
-
-    bossMusicEl.preload = 'auto'; bossMusicEl.loop = true;
-    bossMusicEl.setAttribute('src', 'assets/boss.mp3'); bossMusicEl.load();
+    configureAudioSource(musicEl, mainTracks[currentMainTrackIndex]);
+    configureAudioSource(bossMusicEl, bossTrack);
     bossMusicEl.volume = 0; // empieza silenciada
 
     applyMusicVolume();
@@ -648,15 +757,16 @@
     async function startMusic() {
         if (musicPlaying) return;
         applyMusicVolume();
+        const el = activeMusicEl();
+        const requestId = el.dataset.audioRequestId;
         try {
-            await activeMusicEl().play();
+            await el.play();
+            if (requestId && el.dataset.audioRequestId !== String(requestId)) return;
             musicPlaying = true;
             musicLoadError = null;
             if (typeof updateVolumeUI === 'function') updateVolumeUI();
         } catch (e) {
-            console.warn('[Música] play() rechazado:', e.name, e.message);
-            musicLoadError = 'Bloqueado: ' + (e.name === 'NotAllowedError' ? 'haz clic en el juego primero' : e.message);
-            if (typeof updateVolumeUI === 'function') updateVolumeUI();
+            handleMusicPlayError(el, e, requestId);
         }
     }
 
@@ -692,6 +802,77 @@
                 toEl.volume = targetMusicLevel();
             }
         }, stepMs);
+    }
+
+    function setMainTrack(index, autoplay = false) {
+        const wasActiveMain = currentTrack === 'main';
+        const shouldResume = autoplay && wasActiveMain && musicPlaying;
+        currentMainTrackIndex = (index + mainTracks.length) % mainTracks.length;
+        localStorage.setItem('flappy_music_track', String(currentMainTrackIndex));
+        musicEl.pause();
+        musicEl.currentTime = 0;
+        const requestId = configureAudioSource(musicEl, mainTracks[currentMainTrackIndex]);
+        musicEl.volume = wasActiveMain ? targetMusicLevel() : 0;
+        musicLoadError = null;
+        if (shouldResume) {
+            musicEl.play()
+                .then(() => {
+                    if (musicEl.dataset.audioRequestId !== String(requestId)) return;
+                    musicPlaying = true;
+                    musicLoadError = null;
+                    updateVolumeUI();
+                })
+                .catch(e => handleMusicPlayError(musicEl, e, requestId));
+        } else {
+            updateVolumeUI();
+        }
+    }
+
+    function nextMainTrack() {
+        if (isBossMusicLocked()) {
+            if (currentTrack !== 'boss' && musicPlaying) crossfadeTo('boss', 500);
+            if (typeof updateVolumeUI === 'function') updateVolumeUI();
+            return;
+        }
+        setMainTrack(currentMainTrackIndex + 1, true);
+    }
+
+    function randomMainTrackIndex() {
+        let index = Math.floor(Math.random() * mainTracks.length);
+        if (mainTracks.length > 1 && index === currentMainTrackIndex) {
+            index = (index + 1 + Math.floor(Math.random() * (mainTracks.length - 1))) % mainTracks.length;
+        }
+        return index;
+    }
+
+    function randomizeGameOverMusic() {
+        if (isBossMusicLocked()) {
+            if (currentTrack !== 'boss' && musicPlaying) {
+                crossfadeTo('boss', 600);
+            } else if (currentTrack === 'boss' && musicPlaying && bossMusicEl.paused && !musicMuted) {
+                bossMusicEl.currentTime = 0;
+                bossMusicEl.play().catch(error => handleMusicPlayError(bossMusicEl, error, bossMusicEl.dataset.audioRequestId));
+            }
+            updateVolumeUI();
+            return;
+        }
+        const shouldPlay = musicPlaying;
+        const index = randomMainTrackIndex();
+        if (currentTrack === 'boss') {
+            setMainTrack(index, false);
+            if (shouldPlay) {
+                crossfadeTo('main', 900);
+            } else {
+                bossMusicEl.pause();
+                bossMusicEl.currentTime = 0;
+                bossMusicEl.volume = 0;
+                currentTrack = 'main';
+                applyMusicVolume();
+                updateVolumeUI();
+            }
+            return;
+        }
+        setMainTrack(index, shouldPlay);
     }
 
     // Generic blip with optional pitch sweep + tremolo
@@ -778,6 +959,12 @@
             blip(980, 0.28, 'sawtooth', 0.34, 180);
             noise(0.22, 0.26, 3200);
         },
+        thunder: () => {
+            ensureAudio();
+            // Trueno ambiental muy bajo: solo textura grave durante la fase jefe.
+            noise(0.72, 0.075, 260);
+            blip(54, 0.9, 'sine', 0.045, 34);
+        },
         win: () => {
             ensureAudio();
             // Fanfarria de victoria
@@ -828,7 +1015,12 @@
     const volUpBtn = document.getElementById('vol-up');
     const volDownBtn = document.getElementById('vol-down');
     const muteBtn = document.getElementById('mute-btn');
+    const gameVolSlider = document.getElementById('game-vol-slider');
+    const gameVolValue = document.getElementById('game-vol-value');
+    const gameVolUpBtn = document.getElementById('game-vol-up');
+    const gameVolDownBtn = document.getElementById('game-vol-down');
     const playMusicBtn = document.getElementById('play-music-btn');
+    const nextTrackBtn = document.getElementById('next-track-btn');
     const musicStatus = document.getElementById('music-status');
     const settingsToggleBtn = document.getElementById('settings-toggle');
     const settingsPanel = document.getElementById('settings-panel');
@@ -843,6 +1035,9 @@
         volSlider.value = String(musicVolume);
         volSlider.style.setProperty('--vol', musicVolume + '%');
         volValue.textContent = (musicMuted ? 'Silenciado' : musicVolume + '%');
+        gameVolSlider.value = String(gameVolume);
+        gameVolSlider.style.setProperty('--vol', gameVolume + '%');
+        gameVolValue.textContent = gameVolume + '%';
         muteBtn.textContent = musicMuted ? '🔇' : (musicVolume === 0 ? '🔈' : musicVolume < 50 ? '🔉' : '🔊');
         musicToggleBtn.classList.toggle('muted', musicMuted);
 
@@ -860,11 +1055,10 @@
                 musicStatus.textContent = '⚠ ' + musicLoadError;
                 musicStatus.classList.add('error');
             } else if (musicPlaying && !cur.paused) {
-                const trackLabel = currentTrack === 'boss' ? 'Boss · Harmonica Finals' : 'Principal';
-                musicStatus.textContent = '♪ ' + trackLabel + (cur.duration ? ' — ' + cur.duration.toFixed(1) + 's en loop' : ' — cargando…');
+                musicStatus.textContent = '♪ ' + activeMusicTitle();
                 musicStatus.classList.add('ok');
             } else {
-                musicStatus.textContent = '';
+                musicStatus.textContent = '♪ ' + activeMusicTitle();
             }
         }
     }
@@ -887,6 +1081,13 @@
             localStorage.setItem('flappy_music_muted', '0');
         }
         applyMusicVolume();
+        updateVolumeUI();
+    }
+
+    function setGameVolume(v) {
+        gameVolume = Math.max(0, Math.min(100, Math.round(v)));
+        localStorage.setItem('flappy_game_volume', String(gameVolume));
+        applyGameVolume();
         updateVolumeUI();
     }
 
@@ -939,6 +1140,9 @@
     volUpBtn.addEventListener('click', e => { e.stopPropagation(); setVolume(musicVolume + 10); });
     volDownBtn.addEventListener('click', e => { e.stopPropagation(); setVolume(musicVolume - 10); });
     muteBtn.addEventListener('click', e => { e.stopPropagation(); toggleMute(); });
+    gameVolSlider.addEventListener('input', e => setGameVolume(parseInt(e.target.value, 10)));
+    gameVolUpBtn.addEventListener('click', e => { e.stopPropagation(); setGameVolume(gameVolume + 10); });
+    gameVolDownBtn.addEventListener('click', e => { e.stopPropagation(); setGameVolume(gameVolume - 10); });
 
     // Botón Play/Pausa explícito (es un user gesture seguro para play())
     if (playMusicBtn) {
@@ -957,6 +1161,14 @@
                 }
                 startMusic();
             }
+        });
+    }
+
+    if (nextTrackBtn) {
+        nextTrackBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            ensureAudio();
+            nextMainTrack();
         });
     }
 
@@ -1008,6 +1220,7 @@
         bossFinalPipeFadeStarted = false;
         rays = [];
         raySpawnTimer = 0;
+        stormThunderTimer = 0;
         screenShake = 0;
         winTimer = 0;
         confetti = [];
@@ -1101,6 +1314,27 @@
         return p && p.width ? p.width : PIPE_WIDTH;
     }
 
+    function pipeCollisionSegments(p) {
+        return [
+            [p.topStart === null || p.topStart === undefined ? 0 : p.topStart, p.top],
+            [p.bottom, p.bottomEnd === null || p.bottomEnd === undefined ? GROUND_Y : p.bottomEnd]
+        ];
+    }
+
+    function birdHitsPipe(p) {
+        const pWidth = getPipeWidth(p);
+        if (bird.x + BIRD_HITBOX_R <= p.x || bird.x - BIRD_HITBOX_R >= p.x + pWidth) return false;
+        const birdTop = bird.y - BIRD_HITBOX_R;
+        const birdBottom = bird.y + BIRD_HITBOX_R;
+        for (const seg of pipeCollisionSegments(p)) {
+            const y0 = Math.min(seg[0], seg[1]);
+            const y1 = Math.max(seg[0], seg[1]);
+            if (y1 <= y0) continue;
+            if (birdBottom > y0 && birdTop < y1) return true;
+        }
+        return false;
+    }
+
     function isPipeAnimationActive() {
         return score >= PIPE_ANIMATION_SCORE || state === STATE.BOSS;
     }
@@ -1117,21 +1351,26 @@
         let width = PIPE_WIDTH;
         const difficulty = pipeDifficulty01();
         let topHeight = null;
+        let topStart = null;
+        let bottomEnd = null;
         if (state === STATE.BOSS && bossPhase === 1) {
             const bossRamp = clamp01(bossTime / BOSS_RAY_PHASE_AT);
-            gap = Math.round((176 - bossRamp * 18 + Math.random() * 18) * _hRatio);
+            gap = Math.round((188 - bossRamp * 12 + Math.random() * 16) * _hRatio);
         } else if (state === STATE.BOSS && bossPhase === 2) {
             width = BOSS_RAY_PIPE_WIDTH;
             gap = Math.round((330 + Math.random() * 38) * _hRatio);
-            const rayTopMin = Math.round(96 * _hRatio);
+            const pipeLen = Math.round((92 + Math.random() * 30) * _hRatio);
+            const rayTopMin = Math.round(92 * _hRatio);
             const rayTopMax = Math.max(
                 rayTopMin + 18,
                 Math.min(
-                    GROUND_Y - gap - Math.round(120 * _hRatio),
-                    Math.round(210 * _hRatio)
+                    GROUND_Y - gap - Math.round(132 * _hRatio),
+                    Math.round(178 * _hRatio)
                 )
             );
             topHeight = rayTopMin + Math.random() * Math.max(18, rayTopMax - rayTopMin);
+            topStart = Math.max(0, topHeight - pipeLen);
+            bottomEnd = Math.min(GROUND_Y, topHeight + gap + pipeLen);
         } else if (difficulty > 0) {
             gap = Math.round((190 - difficulty * 25 + Math.random() * 30) * _hRatio);
         }
@@ -1145,6 +1384,8 @@
             width: width,
             top: topHeight,
             bottom: topHeight + gap,
+            topStart: topStart,
+            bottomEnd: bottomEnd,
             baseTop: topHeight,
             baseGap: gap,
             scored: false,
@@ -1157,14 +1398,13 @@
         const margin = 70;
         const sc = boss.scale;
         const sw = BOSS_SPRITE_W * BOSS_PIXEL * sc;
-        const sh = BOSS_SPRITE_H * BOSS_PIXEL * sc;
         const aimedY = targetY !== undefined ? targetY : bird.y + (Math.random() - 0.5) * 150;
         const y = Math.max(margin, Math.min(GROUND_Y - margin, aimedY));
-        const sx = boss.x - sw * 0.38;
-        const sy = boss.y + (sourceOffset || 0) * sh;
+        const sx = boss.x - sw * 0.42;
+        const sy = y;
         rays.push({
             sx: sx,
-            sy: Math.max(margin, Math.min(GROUND_Y - margin, sy)),
+            sy: sy,
             ex: -30,
             ey: y,
             telegraphTime: options.telegraphTime || 0.78,
@@ -1239,16 +1479,21 @@
         const moving = state !== STATE.DEAD && state !== STATE.GAMEOVER && state !== STATE.WIN;
         if (moving) {
             groundOffset = (groundOffset + PIPE_SPEED * dt) % 24;
-            cloudOffset += 8 * dt;
-            cityOffset += 18 * dt;
-            bushOffset += 50 * dt;
-            starsOffset += 2 * dt;
+            updateBackground(dt, backgroundCameraX + PIPE_SPEED * dt);
             dayCyclePhase = (dayCyclePhase + dt) % DAY_CYCLE_DURATION;
             isNight = nightLevel() > 0.55;
         }
 
         if (screenShake > 0) screenShake = Math.max(0, screenShake - dt * 1.6);
         if (boss.eyeGlow > 0) boss.eyeGlow = Math.max(0, boss.eyeGlow - dt * 1.4);
+        if (state === STATE.BOSS && bossAttackLevel() > 0.25) {
+            stormThunderTimer -= dt;
+            if (stormThunderTimer <= 0) {
+                sfx.thunder();
+                screenShake = Math.max(screenShake, 0.08);
+                stormThunderTimer = 5.5 + Math.random() * 4.5;
+            }
+        }
 
         if (state === STATE.READY) {
             bird.bobTimer += dt;
@@ -1277,6 +1522,7 @@
                 bossFinalPipeFadeStarted = false;
                 pipesFadingOut = false;
                 raySpawnTimer = 0.5;
+                stormThunderTimer = 0.8;
                 screenShake = 1.0;
                 sfx.bossRoar();
                 if (currentTrack !== 'boss' && musicPlaying) crossfadeTo('boss', 800);
@@ -1291,7 +1537,7 @@
                 const difficulty = pipeDifficulty01();
                 let interval = PIPE_INTERVAL * (1 - difficulty * 0.12);
                 if (state === STATE.BOSS && bossPhase === 1) {
-                    interval = PIPE_INTERVAL * 0.76;
+                    interval = PIPE_INTERVAL * 0.92;
                 } else if (state === STATE.BOSS && bossPhase === 2) {
                     interval = PIPE_INTERVAL * 1.2;
                 }
@@ -1470,12 +1716,7 @@
                 for (const p of pipes) {
                     // Cuando el tubo empieza a desvanecerse, ya no es sólido
                     if (p.fadeOut !== undefined && p.fadeOut < 0.6) continue;
-                    const pWidth = getPipeWidth(p);
-                    if (
-                        bird.x + BIRD_HITBOX_R > p.x &&
-                        bird.x - BIRD_HITBOX_R < p.x + pWidth &&
-                        (bird.y - BIRD_HITBOX_R < p.top || bird.y + BIRD_HITBOX_R > p.bottom)
-                    ) {
+                    if (birdHitsPipe(p)) {
                         killBird();
                         break;
                     }
@@ -1504,6 +1745,7 @@
                     bestScore = score;
                     localStorage.setItem('flappy_best', String(bestScore));
                 }
+                randomizeGameOverMusic();
             }
         } else if (state === STATE.WIN) {
             winTimer += dt;
@@ -1549,227 +1791,562 @@
         setTimeout(() => sfx.die(), 180);
     }
 
-    // ---------- Drawing: backgrounds ----------
-    function drawSky() {
-        const skyStages = [
-            { top: '#4ec0ca', mid: '#7ed4dc', bot: '#bde7eb' }, // dia
-            { top: '#f08a5d', mid: '#d66b7d', bot: '#ffd28f' }, // tarde
-            { top: '#0c1a3a', mid: '#1f3566', bot: '#3b5a8a' }, // noche
-            { top: '#5da7cc', mid: '#92c7d4', bot: '#ffd3a0' }  // manana
-        ];
+    // ---------- Drawing: layered parallax background ----------
+    const BACKGROUND_TILE_W = 512;
+    const backgroundLayerCache = {};
+    const BACKGROUND_STAGE_PALETTES = [
+        {
+            skyTop: '#4ec0ca', skyMid: '#7ed4dc', skyBot: '#bde7eb',
+            star: '#ffffff', moonMask: '#4ec0ca',
+            cloudShade: 'rgba(132, 198, 205, 0.62)', cloudMid: 'rgba(220, 247, 247, 0.86)', cloudLight: 'rgba(255, 255, 238, 0.92)',
+            farCity: '#3b6174', farLine: 'rgba(94, 139, 158, 0.36)', farWindow: 'rgba(255, 224, 150, 0.20)',
+            midWindow: 'rgba(255, 230, 166, 0.22)', windowAccent: 'rgba(255, 245, 188, 0.34)', windowGlow: 'rgba(255, 214, 126, 0.04)',
+            farWindowModulo: 18, midWindowModulo: 16,
+            midCity: '#4f7b84', treeTrunk: '#1f3f35', treeDark: '#326650', treeMid: '#4d8b60',
+            bushDark: '#2f6738', bushMid: '#43894b', bushLight: '#65ad5b',
+            grassDark: '#3d6e1a', grassMid: '#5fa83a', grassHi: '#7dd24a', grassDetail: '#4d8a30',
+            hazeA: 'rgba(180, 232, 234, 0)', hazeB: 'rgba(180, 232, 234, 0.16)', hazeC: 'rgba(110, 174, 172, 0.05)'
+        },
+        {
+            skyTop: '#f08a5d', skyMid: '#d66b7d', skyBot: '#ffd28f',
+            star: '#ffe7b5', moonMask: '#f08a5d',
+            cloudShade: 'rgba(141, 80, 101, 0.50)', cloudMid: 'rgba(255, 193, 159, 0.58)', cloudLight: 'rgba(255, 230, 178, 0.62)',
+            farCity: '#493751', farLine: 'rgba(124, 91, 112, 0.34)', farWindow: 'rgba(255, 197, 104, 0.28)',
+            midWindow: 'rgba(255, 205, 118, 0.34)', windowAccent: 'rgba(255, 235, 156, 0.48)', windowGlow: 'rgba(255, 146, 80, 0.06)',
+            farWindowModulo: 13, midWindowModulo: 11,
+            midCity: '#60445d', treeTrunk: '#34252f', treeDark: '#4f4c3a', treeMid: '#6c6843',
+            bushDark: '#395530', bushMid: '#5f733b', bushLight: '#8a9649',
+            grassDark: '#69702f', grassMid: '#8f8a3e', grassHi: '#b2a64d', grassDetail: '#6b7c32',
+            hazeA: 'rgba(255, 171, 111, 0)', hazeB: 'rgba(255, 171, 111, 0.18)', hazeC: 'rgba(164, 95, 89, 0.06)'
+        },
+        {
+            skyTop: '#071126', skyMid: '#0d1d3d', skyBot: '#173758',
+            star: '#c8dcff', moonMask: '#071126',
+            cloudShade: 'rgba(5, 18, 38, 0.42)', cloudMid: 'rgba(28, 54, 82, 0.38)', cloudLight: 'rgba(72, 101, 137, 0.30)',
+            farCity: '#07152c', farLine: 'rgba(31, 58, 83, 0.42)', farWindow: 'rgba(245, 187, 87, 0.56)',
+            midWindow: 'rgba(255, 207, 102, 0.68)', windowAccent: 'rgba(255, 238, 154, 0.84)', windowGlow: 'rgba(255, 176, 72, 0.13)',
+            farWindowModulo: 8, midWindowModulo: 7,
+            midCity: '#0c2636', treeTrunk: '#08141d', treeDark: '#0e2e34', treeMid: '#153c3d',
+            bushDark: '#102c26', bushMid: '#184238', bushLight: '#24674a',
+            grassDark: '#11391f', grassMid: '#1f5a2d', grassHi: '#2c7834', grassDetail: '#1a4b27',
+            hazeA: 'rgba(95, 132, 166, 0)', hazeB: 'rgba(108, 154, 176, 0.12)', hazeC: 'rgba(55, 92, 93, 0.04)'
+        },
+        {
+            skyTop: '#5da7cc', skyMid: '#92c7d4', skyBot: '#ffd3a0',
+            star: '#ffffff', moonMask: '#5da7cc',
+            cloudShade: 'rgba(126, 169, 184, 0.56)', cloudMid: 'rgba(225, 239, 230, 0.76)', cloudLight: 'rgba(255, 239, 196, 0.70)',
+            farCity: '#36536d', farLine: 'rgba(85, 119, 138, 0.35)', farWindow: 'rgba(255, 220, 142, 0.22)',
+            midWindow: 'rgba(255, 224, 154, 0.28)', windowAccent: 'rgba(255, 240, 174, 0.38)', windowGlow: 'rgba(255, 198, 111, 0.05)',
+            farWindowModulo: 16, midWindowModulo: 14,
+            midCity: '#496f7b', treeTrunk: '#213c36', treeDark: '#38624d', treeMid: '#5a8f62',
+            bushDark: '#335d38', bushMid: '#4b8148', bushLight: '#74ad55',
+            grassDark: '#587327', grassMid: '#7c9a36', grassHi: '#9fc64a', grassDetail: '#597d2d',
+            hazeA: 'rgba(255, 211, 160, 0)', hazeB: 'rgba(255, 211, 160, 0.18)', hazeC: 'rgba(121, 168, 167, 0.05)'
+        }
+    ];
+    const backgroundLayers = [
+        { name: 'sky', speed: 0, draw: drawSkyLayer },
+        {
+            name: 'clouds',
+            speed: 0.16,
+            tileW: BACKGROUND_TILE_W * 2,
+            density: 8,
+            yHeightRange: [52, 178],
+            scaleRange: [0.72, 1.34],
+            alpha: 0.62,
+            build: buildCloudLayer
+        },
+        { name: 'farCity', speed: 0.12, tileW: BACKGROUND_TILE_W, build: buildFarCityLayer },
+        { name: 'midCityOrTrees', speed: 0.24, tileW: BACKGROUND_TILE_W, build: buildMidCityTreeLayer },
+        { name: 'haze', speed: 0.18, draw: drawHazeLayer },
+        { name: 'bushesMid', speed: 0.42, tileW: BACKGROUND_TILE_W, build: buildMidBushLayer },
+        { name: 'grassFront', speed: 0.68, tileW: BACKGROUND_TILE_W, build: buildFrontGrassLayer }
+    ];
+
+    function updateBackground(deltaTime, cameraX) {
+        backgroundCameraX = cameraX;
+        cityOffset = cameraX * 0.12;
+        starsOffset = (starsOffset + deltaTime * 1.35) % 10000;
+    }
+
+    function drawBackground(layerAlpha = 1) {
+        for (const layer of backgroundLayers) drawLayer(ctx, layer, layerAlpha);
+    }
+
+    function drawLayer(ctxRef, layer, layerAlpha = 1) {
+        if (layer.draw) {
+            layer.draw(ctxRef, layer, layer.name === 'sky' ? 1 : layerAlpha);
+            return;
+        }
         const cycle = cycleInfo();
-        const cur = skyStages[cycle.from];
-        const next = skyStages[cycle.to];
-        const top = mixHex(cur.top, next.top, cycle.blend);
-        const mid = mixHex(cur.mid, next.mid, cycle.blend);
-        const bot = mixHex(cur.bot, next.bot, cycle.blend);
-
-        const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-        g.addColorStop(0, top);
-        g.addColorStop(0.6, mid);
-        g.addColorStop(1, bot);
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, W, GROUND_Y);
+        drawLayerStage(ctxRef, layer, cycle.from, layerAlpha * (cycle.from === cycle.to ? 1 : 1 - cycle.blend));
+        if (cycle.from !== cycle.to && cycle.blend > 0) {
+            drawLayerStage(ctxRef, layer, cycle.to, layerAlpha * cycle.blend);
+        }
     }
 
-    // Stars (night only)
-    function drawStars() {
-        const n = nightLevel();
-        if (n <= 0.05) return;
-        ctx.save();
-        const offset = starsOffset;
-        for (let i = 0; i < 60; i++) {
-            const sx = (i * 73 + offset * 8) % W;
-            const sy = (i * 37) % (GROUND_Y - 200);
-            const tw = (Math.sin(performance.now() / 600 + i) + 1) / 2;
-            ctx.globalAlpha = n * (0.4 + tw * 0.6);
-            ctx.fillStyle = i % 7 === 0 ? '#ffe9b3' : '#ffffff';
-            ctx.fillRect(Math.floor(sx), Math.floor(sy), 2, 2);
+    function drawLayerStage(ctxRef, layer, stage, alpha) {
+        if (alpha <= 0.001) return;
+        const sprite = getBackgroundLayerSprite(layer, stage);
+        const tileW = layer.tileW;
+        const offset = Math.floor(((backgroundCameraX * layer.speed) % tileW + tileW) % tileW);
+        ctxRef.save();
+        ctxRef.globalAlpha *= alpha * (layer.alpha === undefined ? 1 : layer.alpha);
+        for (let x = -offset - tileW; x < W + tileW; x += tileW) {
+            ctxRef.drawImage(sprite, Math.round(x), 0);
         }
-        ctx.restore();
+        ctxRef.restore();
     }
 
-    // Sun / Moon
-    function drawCelestial() {
-        ctx.save();
-        const n = nightLevel();
-        const d = duskLevel();
-        const dawn = dawnLevel();
-        const stage = cycleStage();
-        const sunT = stage < 2 ? stage / 2 : Math.max(0, stage - 3) * 0.35;
-        const moonT = clamp01((stage - 1.55) / 1.7);
-        const sunX = W - 95 - sunT * 130;
-        const sunY = 115 + Math.sin(sunT * Math.PI) * 55 + d * 42 - dawn * 22;
-        const moonX = W - 70 - moonT * 170;
-        const moonY = 95 + Math.sin(moonT * Math.PI) * 45;
-
-        if (n > 0.15) {
-            const cx = moonX, cy = moonY;
-            ctx.globalAlpha = n;
-            // Moon glow
-            const grd = ctx.createRadialGradient(cx, cy, 10, cx, cy, 80);
-            grd.addColorStop(0, 'rgba(255,255,220,0.35)');
-            grd.addColorStop(1, 'rgba(255,255,220,0)');
-            ctx.fillStyle = grd;
-            ctx.fillRect(cx - 80, cy - 80, 160, 160);
-            // Moon
-            ctx.fillStyle = '#fff5cc';
-            ctx.beginPath(); ctx.arc(cx, cy, 32, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = '#0c1a3a';
-            ctx.beginPath(); ctx.arc(cx - 12, cy - 6, 28, 0, Math.PI * 2); ctx.fill();
-            // Craters
-            ctx.fillStyle = '#e3d9a8';
-            ctx.beginPath(); ctx.arc(cx + 14, cy + 8, 4, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(cx + 8, cy - 12, 3, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(cx + 22, cy - 4, 2, 0, Math.PI * 2); ctx.fill();
-            ctx.globalAlpha = 1;
-        }
-        const sunAlpha = Math.max(0, stage < 2 ? 1 - n * 0.85 : dawn * 0.95);
-        if (sunAlpha > 0.05) {
-            const cx = sunX, cy = sunY;
-            ctx.globalAlpha = sunAlpha;
-            // Sun glow
-            const grd = ctx.createRadialGradient(cx, cy, 10, cx, cy, 100);
-            grd.addColorStop(0, 'rgba(255,250,200,0.45)');
-            grd.addColorStop(1, 'rgba(255,250,200,0)');
-            ctx.fillStyle = grd;
-            ctx.fillRect(cx - 100, cy - 100, 200, 200);
-            ctx.fillStyle = '#fff7c0';
-            ctx.beginPath(); ctx.arc(cx, cy, 34, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = '#ffe066';
-            ctx.beginPath(); ctx.arc(cx, cy, 26, 0, Math.PI * 2); ctx.fill();
-            ctx.globalAlpha = 1;
-        }
-        ctx.restore();
-    }
-
-    const cloudSpriteCache = {};
-
-    function buildCloudSprite(night) {
-        const key = night ? 'night' : 'day';
-        if (cloudSpriteCache[key]) return cloudSpriteCache[key];
-        const off = makePixelCanvas(160, 80);
-        const x = off.ctx;
-        const cx = 80, cy = 40;
-        const col = night ? '#5a6c8c' : '#ffffff';
-        const shade = night ? '#3d4f74' : '#d8f6f8';
-        const hi = night ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.72)';
-
-        x.fillStyle = col;
-        x.beginPath();
-        x.moveTo(cx - 54, cy + 18);
-        x.bezierCurveTo(cx - 62, cy - 2, cx - 41, cy - 21, cx - 18, cy - 13);
-        x.bezierCurveTo(cx - 8, cy - 35, cx + 27, cy - 36, cx + 35, cy - 11);
-        x.bezierCurveTo(cx + 58, cy - 17, cx + 79, cy + 2, cx + 68, cy + 22);
-        x.lineTo(cx - 42, cy + 24);
-        x.bezierCurveTo(cx - 50, cy + 24, cx - 55, cy + 21, cx - 54, cy + 18);
-        x.fill();
-
-        x.fillStyle = shade;
-        x.beginPath();
-        x.moveTo(cx - 38, cy + 15);
-        x.bezierCurveTo(cx - 6, cy + 21, cx + 33, cy + 18, cx + 66, cy + 20);
-        x.lineTo(cx + 60, cy + 27);
-        x.lineTo(cx - 44, cy + 27);
-        x.closePath();
-        x.fill();
-
-        x.fillStyle = hi;
-        x.fillRect(cx - 20, cy - 22, 28, 5);
-        x.fillRect(cx + 15, cy - 18, 22, 4);
-        x.fillRect(cx - 45, cy - 5, 16, 4);
-
-        cloudSpriteCache[key] = off.canvas;
+    function getBackgroundLayerSprite(layer, stage) {
+        const key = layer.name + ':' + stage;
+        if (backgroundLayerCache[key]) return backgroundLayerCache[key];
+        const off = makePixelCanvas(layer.tileW, GROUND_Y);
+        off.ctx.imageSmoothingEnabled = false;
+        layer.build(off.ctx, layer.tileW, GROUND_Y, BACKGROUND_STAGE_PALETTES[stage], layer);
+        backgroundLayerCache[key] = off.canvas;
         return off.canvas;
     }
 
-    function drawClouds() {
-        ctx.save();
-        const n = nightLevel();
-        const daySprite = buildCloudSprite(false);
-        const nightSprite = buildCloudSprite(true);
-        function drawRows(sprite, alphaScale) {
-            // Far clouds (faded, slow)
-            ctx.globalAlpha = (0.55 - n * 0.3) * alphaScale;
-            for (let i = -1; i < 4; i++) {
-                const x = (((i * 240) - cloudOffset * 0.6) % (W + 240) + (W + 240)) % (W + 240) - 120;
-                cloudShape(sprite, x + 60, 230 + Math.sin(cloudOffset * 0.02 + i) * 3, 0.7);
-            }
-            // Near clouds (bigger, faster, brighter)
-            ctx.globalAlpha = (0.95 - n * 0.45) * alphaScale;
-            for (let i = -1; i < 3; i++) {
-                const x = (((i * 280) - cloudOffset * 1.0 + 80) % (W + 280) + (W + 280)) % (W + 280) - 140;
-                cloudShape(sprite, x + 60, 150 + Math.sin(cloudOffset * 0.025 + i * 1.7) * 4, 1.0);
-            }
+    function drawSkyLayer(ctxRef) {
+        const cycle = cycleInfo();
+        const cur = BACKGROUND_STAGE_PALETTES[cycle.from];
+        const next = BACKGROUND_STAGE_PALETTES[cycle.to];
+        const top = mixHex(cur.skyTop, next.skyTop, cycle.blend);
+        const mid = mixHex(cur.skyMid, next.skyMid, cycle.blend);
+        const bot = mixHex(cur.skyBot, next.skyBot, cycle.blend);
+        const g = ctxRef.createLinearGradient(0, 0, 0, GROUND_Y);
+        g.addColorStop(0, top);
+        g.addColorStop(0.45, mid);
+        g.addColorStop(1, bot);
+        ctxRef.fillStyle = g;
+        ctxRef.fillRect(0, 0, W, GROUND_Y);
+
+        ctxRef.save();
+        const night = nightLevel();
+        const dusk = duskLevel();
+        const dawn = dawnLevel();
+        for (let i = 0; i < 78; i++) {
+            const sx = Math.floor((i * 83 + 19) % W);
+            const sy = Math.floor(18 + (i * 47) % Math.max(80, GROUND_Y - 245));
+            const tw = (Math.sin(starsOffset * 2.6 + i * 1.7) + 1) / 2;
+            ctxRef.globalAlpha = night * (0.22 + tw * 0.34);
+            ctxRef.fillStyle = i % 9 === 0 ? '#ffe8a8' : BACKGROUND_STAGE_PALETTES[2].star;
+            ctxRef.fillRect(sx, sy, i % 13 === 0 ? 2 : 1, i % 13 === 0 ? 2 : 1);
         }
-        drawRows(daySprite, 1 - n);
-        drawRows(nightSprite, n);
-        ctx.restore();
+
+        const stage = cycleStage();
+        const sunT = stage < 2 ? stage / 2 : Math.max(0, stage - 3) * 0.35;
+        const sunX = W - 95 - sunT * 130;
+        const sunY = 115 + Math.sin(sunT * Math.PI) * 55 + dusk * 42 - dawn * 22;
+        const sunAlpha = Math.max(0, stage < 2 ? 1 - night * 0.85 : dawn * 0.95);
+        if (sunAlpha > 0.05) {
+            ctxRef.globalAlpha = sunAlpha;
+            const sunGlow = ctxRef.createRadialGradient(sunX, sunY, 10, sunX, sunY, 100);
+            sunGlow.addColorStop(0, 'rgba(255, 250, 200, 0.38)');
+            sunGlow.addColorStop(1, 'rgba(255, 250, 200, 0)');
+            ctxRef.fillStyle = sunGlow;
+            ctxRef.fillRect(sunX - 100, sunY - 100, 200, 200);
+            ctxRef.fillStyle = '#fff7c0';
+            ctxRef.beginPath(); ctxRef.arc(sunX, sunY, 34, 0, Math.PI * 2); ctxRef.fill();
+            ctxRef.fillStyle = '#ffe066';
+            ctxRef.beginPath(); ctxRef.arc(sunX, sunY, 26, 0, Math.PI * 2); ctxRef.fill();
+        }
+
+        const moonX = W - 92;
+        const moonY = 98;
+        if (night > 0.12) {
+            const glow = ctxRef.createRadialGradient(moonX, moonY, 8, moonX, moonY, 86);
+            glow.addColorStop(0, 'rgba(205, 224, 255, ' + (0.20 * night) + ')');
+            glow.addColorStop(1, 'rgba(205, 224, 255, 0)');
+            ctxRef.globalAlpha = 1;
+            ctxRef.fillStyle = glow;
+            ctxRef.fillRect(moonX - 86, moonY - 86, 172, 172);
+            ctxRef.globalAlpha = night;
+            ctxRef.fillStyle = 'rgba(230, 238, 255, 0.74)';
+            ctxRef.beginPath(); ctxRef.arc(moonX, moonY, 24, 0, Math.PI * 2); ctxRef.fill();
+            ctxRef.fillStyle = top;
+            ctxRef.beginPath(); ctxRef.arc(moonX - 9, moonY - 5, 22, 0, Math.PI * 2); ctxRef.fill();
+        }
+        ctxRef.restore();
     }
 
-    function cloudShape(sprite, x, y, scale) {
-        ctx.drawImage(sprite, x - 80 * scale, y - 40 * scale, 160 * scale, 80 * scale);
+    function drawHazeLayer(ctxRef, layer, alpha) {
+        ctxRef.save();
+        ctxRef.globalAlpha *= alpha;
+        const cycle = cycleInfo();
+        const pal = BACKGROUND_STAGE_PALETTES[cycle.to];
+        const baseY = GROUND_Y - 118;
+        const haze = ctxRef.createLinearGradient(0, baseY - 55, 0, GROUND_Y);
+        haze.addColorStop(0, pal.hazeA);
+        haze.addColorStop(0.48, pal.hazeB);
+        haze.addColorStop(1, pal.hazeC);
+        ctxRef.fillStyle = haze;
+        ctxRef.fillRect(0, Math.max(0, baseY - 55), W, 120);
+
+        const glowX = ((backgroundCameraX * layer.speed * 0.35) % (W + 260) + W + 260) % (W + 260) - 130;
+        ctxRef.fillStyle = 'rgba(130, 178, 192, 0.06)';
+        ctxRef.fillRect(Math.floor(glowX), baseY, 180, 2);
+        ctxRef.fillRect(Math.floor(glowX + 24), baseY + 7, 110, 2);
+        ctxRef.restore();
     }
 
-    // Distant city silhouette layer
-    function drawCity() {
-        const baseY = GROUND_Y - 8;
-        ctx.save();
-        // Far city
-        ctx.fillStyle = isNight ? '#1a2a48' : '#7e9bb0';
-        const offFar = cityOffset * 0.4;
-        for (let x = -((offFar) % 80) - 80; x < W + 80; x += 80) {
-            const heights = [70, 95, 55, 110, 80, 65];
-            for (let i = 0; i < 6; i++) {
-                const bx = x + i * 14;
-                const bh = heights[i];
-                ctx.fillRect(bx, baseY - bh, 14, bh);
-                // Roof step
-                ctx.fillRect(bx + 3, baseY - bh - 4, 8, 4);
-            }
+    function drawPixelCloudOval(ctxRef, x, y, w, h, color) {
+        const px = Math.round(x);
+        const py = Math.round(y);
+        const pw = Math.max(4, Math.round(w));
+        const ph = Math.max(4, Math.round(h));
+        const stepX = Math.max(2, Math.round(pw * 0.16));
+        const stepY = Math.max(2, Math.round(ph * 0.22));
+        ctxRef.fillStyle = color;
+        ctxRef.fillRect(px + stepX, py, pw - stepX * 2, ph);
+        ctxRef.fillRect(px, py + stepY, pw, ph - stepY * 2);
+        ctxRef.fillRect(px + Math.floor(stepX * 0.5), py + Math.floor(stepY * 0.5), pw - stepX, ph - stepY);
+    }
+
+    function drawCloudCluster(ctxRef, x, y, scale, pal, variant) {
+        const s = Math.max(0.5, scale);
+        const shapes = [
+            [
+                [2, 18, 36, 18], [24, 8, 42, 30], [58, 13, 35, 24],
+                [84, 20, 28, 16], [16, 26, 82, 14]
+            ],
+            [
+                [0, 16, 30, 17], [19, 6, 35, 26], [47, 12, 48, 24],
+                [86, 18, 34, 18], [12, 25, 96, 15]
+            ],
+            [
+                [4, 17, 26, 15], [22, 10, 30, 20], [49, 5, 34, 27],
+                [78, 14, 38, 21], [103, 22, 22, 13], [18, 26, 92, 13]
+            ]
+        ];
+        const puffs = shapes[variant % shapes.length];
+
+        for (const p of puffs) {
+            drawPixelCloudOval(ctxRef, x + p[0] * s, y + (p[1] + 5) * s, p[2] * s, Math.max(4, p[3] * 0.56 * s), pal.cloudShade);
         }
-        // Lit windows (night)
-        if (isNight) {
-            ctx.fillStyle = '#ffd76a';
-            for (let i = 0; i < 80; i++) {
-                const wx = ((i * 53 - offFar * 0.4) % (W + 80)) - 40;
-                const wy = baseY - 30 - (i * 17) % 70;
-                if ((i * 7 + Math.floor(performance.now() / 1000)) % 5 !== 0) {
-                    ctx.fillRect(Math.floor(wx), Math.floor(wy), 2, 3);
+        for (const p of puffs) {
+            drawPixelCloudOval(ctxRef, x + p[0] * s, y + p[1] * s, p[2] * s, p[3] * s, pal.cloudMid);
+        }
+
+        const hi = variant % 2 === 0
+            ? [[28, 11, 22, 8], [63, 16, 18, 7]]
+            : [[21, 9, 17, 7], [55, 14, 25, 8], [91, 20, 13, 5]];
+        for (const h of hi) {
+            drawPixelCloudOval(ctxRef, x + h[0] * s, y + h[1] * s, h[2] * s, h[3] * s, pal.cloudLight);
+        }
+
+        ctxRef.fillStyle = pal.cloudShade;
+        ctxRef.fillRect(Math.round(x + 18 * s), Math.round(y + 37 * s), Math.round(68 * s), Math.max(1, Math.round(2 * s)));
+    }
+
+    function drawCloudWrapped(ctxRef, x, y, scale, pal, variant, tileW) {
+        const templateW = [116, 124, 128][variant % 3];
+        const w = Math.round(templateW * scale);
+        drawCloudCluster(ctxRef, x, y, scale, pal, variant);
+        if (x + w > tileW) drawCloudCluster(ctxRef, x - tileW, y, scale, pal, variant);
+        if (x < 0) drawCloudCluster(ctxRef, x + tileW, y, scale, pal, variant);
+    }
+
+    function buildCloudLayer(ctxRef, tileW, tileH, pal, layer) {
+        const count = Math.max(1, Math.round(layer.density || 6));
+        const yMin = Math.max(20, layer.yHeightRange ? layer.yHeightRange[0] : 56);
+        const yMax = Math.max(yMin + 1, layer.yHeightRange ? layer.yHeightRange[1] : 170);
+        const sMin = layer.scaleRange ? layer.scaleRange[0] : 0.75;
+        const sMax = layer.scaleRange ? layer.scaleRange[1] : 1.25;
+        const spacing = tileW / count;
+
+        for (let i = 0; i < count; i++) {
+            const jitter = (((i * 79 + 31) % 97) - 48) * 0.74;
+            const yStep = (i * 43 + 17) % (yMax - yMin);
+            const scaleT = ((i * 37 + 11) % 100) / 100;
+            const scale = sMin + (sMax - sMin) * scaleT;
+            const x = Math.round(i * spacing + jitter);
+            const y = Math.round(yMin + yStep);
+            drawCloudWrapped(ctxRef, x, y, scale, pal, i, tileW);
+        }
+    }
+
+    function drawBuilding(ctxRef, x, baseY, w, h, color, capType, windowColor, windowSeed, windowOptions = {}) {
+        ctxRef.fillStyle = color;
+        ctxRef.fillRect(x, baseY - h, w, h);
+        if (capType === 1) ctxRef.fillRect(x + Math.floor(w * 0.25), baseY - h - 6, Math.max(4, Math.floor(w * 0.5)), 6);
+        if (capType === 2) {
+            ctxRef.beginPath();
+            ctxRef.moveTo(x, baseY - h);
+            ctxRef.lineTo(x + Math.floor(w / 2), baseY - h - 10);
+            ctxRef.lineTo(x + w, baseY - h);
+            ctxRef.closePath();
+            ctxRef.fill();
+        }
+        if (capType === 3) ctxRef.fillRect(x + w - 3, baseY - h - 15, 2, 15);
+
+        const modulo = windowOptions.modulo || 17;
+        const accentColor = windowOptions.accentColor || windowColor;
+        const glowColor = windowOptions.glowColor || null;
+        for (let yy = baseY - h + 12; yy < baseY - 8; yy += 15) {
+            for (let xx = x + 5; xx < x + w - 4; xx += 11) {
+                const hash = Math.abs(xx * 5 + yy * 3 + windowSeed);
+                if (hash % modulo === 0) {
+                    if (glowColor) {
+                        ctxRef.fillStyle = glowColor;
+                        ctxRef.fillRect(xx - 1, yy - 1, 4, 5);
+                    }
+                    ctxRef.fillStyle = windowColor;
+                    ctxRef.fillRect(xx, yy, 2, 3);
+                    if (hash % (modulo * 3) === 0) {
+                        ctxRef.fillStyle = accentColor;
+                        ctxRef.fillRect(xx, yy, 2, 1);
+                        ctxRef.fillStyle = windowColor;
+                    }
                 }
             }
         }
+    }
 
-        // Near city (taller, darker)
-        ctx.fillStyle = isNight ? '#0c1a30' : '#5a7a8e';
-        const offNear = cityOffset * 0.9;
-        for (let x = -((offNear) % 110) - 110; x < W + 110; x += 110) {
-            const heights = [55, 80, 110, 70, 95, 60, 85];
-            for (let i = 0; i < 7; i++) {
-                const bx = x + i * 16;
-                const bh = heights[i];
-                ctx.fillRect(bx, baseY - bh, 16, bh);
-                ctx.fillRect(bx + 4, baseY - bh - 5, 8, 5);
-            }
+    function buildFarCityLayer(ctxRef, tileW, tileH, pal) {
+        const baseY = GROUND_Y - 16;
+        ctxRef.fillStyle = pal.farCity;
+        const buildings = [
+            [0, 22, 82, 1], [25, 17, 58, 0], [45, 34, 108, 3], [83, 25, 72, 2],
+            [112, 19, 94, 0], [136, 42, 122, 1], [182, 24, 74, 0], [209, 31, 101, 3],
+            [244, 16, 66, 0], [264, 37, 116, 2], [305, 22, 88, 1], [331, 48, 136, 0],
+            [383, 18, 69, 0], [406, 32, 105, 3], [442, 26, 78, 1], [472, 40, 119, 2]
+        ];
+        const windowOptions = {
+            modulo: pal.farWindowModulo,
+            accentColor: pal.windowAccent,
+            glowColor: pal.windowGlow
+        };
+        for (let i = 0; i < buildings.length; i++) {
+            const b = buildings[i];
+            drawBuilding(ctxRef, b[0], baseY, b[1], b[2], pal.farCity, b[3], pal.farWindow, i * 23, windowOptions);
         }
-        // Lit near windows
-        if (isNight) {
-            ctx.fillStyle = '#ffe08a';
-            for (let i = 0; i < 100; i++) {
-                const wx = ((i * 41 - offNear * 0.9) % (W + 110)) - 55;
-                const wy = baseY - 20 - (i * 13) % 90;
-                if ((i * 11) % 4 !== 0) {
-                    ctx.fillRect(Math.floor(wx), Math.floor(wy), 3, 3);
-                }
-            }
+        ctxRef.fillStyle = pal.farLine;
+        ctxRef.fillRect(0, baseY - 3, tileW, 3);
+    }
+
+    function drawPixelTree(ctxRef, x, baseY, w, h, trunk, dark, mid) {
+        ctxRef.fillStyle = trunk;
+        ctxRef.fillRect(x + Math.floor(w * 0.45), baseY - Math.floor(h * 0.52), Math.max(3, Math.floor(w * 0.12)), Math.floor(h * 0.52));
+        ctxRef.fillStyle = dark;
+        ctxRef.fillRect(x + 2, baseY - h + 18, w - 4, h - 18);
+        ctxRef.fillRect(x + Math.floor(w * 0.14), baseY - h + 6, Math.floor(w * 0.72), 18);
+        ctxRef.fillRect(x + Math.floor(w * 0.28), baseY - h, Math.floor(w * 0.44), 12);
+        ctxRef.fillStyle = mid;
+        ctxRef.fillRect(x + Math.floor(w * 0.16), baseY - h + 20, Math.floor(w * 0.32), 14);
+        ctxRef.fillRect(x + Math.floor(w * 0.52), baseY - h + 13, Math.floor(w * 0.28), 12);
+    }
+
+    function buildMidCityTreeLayer(ctxRef, tileW, tileH, pal) {
+        const baseY = GROUND_Y - 9;
+        const midBuildings = [
+            [6, 26, 74, 0], [41, 20, 58, 1], [73, 38, 93, 0], [121, 28, 66, 2],
+            [158, 44, 102, 1], [213, 23, 70, 0], [244, 35, 86, 3], [292, 27, 62, 1],
+            [329, 46, 106, 0], [389, 29, 74, 2], [428, 39, 90, 1], [479, 24, 65, 0]
+        ];
+        const windowOptions = {
+            modulo: pal.midWindowModulo || pal.farWindowModulo,
+            accentColor: pal.windowAccent,
+            glowColor: pal.windowGlow
+        };
+        for (let i = 0; i < midBuildings.length; i++) {
+            const b = midBuildings[i];
+            drawBuilding(ctxRef, b[0], baseY, b[1], b[2], pal.midCity, b[3], pal.midWindow || pal.farWindow, i * 29, windowOptions);
         }
-        ctx.restore();
+        const trees = [
+            [18, 50, 42, 76], [94, 42, 36, 61], [191, 56, 44, 82],
+            [275, 47, 38, 67], [362, 58, 48, 80], [455, 44, 39, 62]
+        ];
+        for (const t of trees) drawPixelTree(ctxRef, t[0], baseY + 2, t[2], t[3], pal.treeTrunk, pal.treeDark, pal.treeMid);
+        ctxRef.fillStyle = pal.farLine;
+        ctxRef.fillRect(0, baseY - 1, tileW, 4);
+    }
+
+    function drawBushCluster(ctxRef, x, baseY, w, h, dark, mid, light, variant) {
+        ctxRef.fillStyle = dark;
+        ctxRef.beginPath();
+        ctxRef.moveTo(x, baseY);
+        ctxRef.lineTo(x + Math.floor(w * 0.08), baseY - Math.floor(h * 0.42));
+        ctxRef.lineTo(x + Math.floor(w * 0.23), baseY - Math.floor(h * 0.78));
+        ctxRef.lineTo(x + Math.floor(w * 0.39), baseY - Math.floor(h * 0.58));
+        ctxRef.lineTo(x + Math.floor(w * 0.55), baseY - h);
+        ctxRef.lineTo(x + Math.floor(w * 0.78), baseY - Math.floor(h * 0.62));
+        ctxRef.lineTo(x + w, baseY);
+        ctxRef.closePath();
+        ctxRef.fill();
+
+        ctxRef.fillStyle = mid;
+        ctxRef.fillRect(x + Math.floor(w * 0.08), baseY - Math.floor(h * 0.45), Math.floor(w * 0.28), Math.floor(h * 0.42));
+        ctxRef.fillRect(x + Math.floor(w * 0.34), baseY - Math.floor(h * 0.66), Math.floor(w * 0.25), Math.floor(h * 0.62));
+        ctxRef.fillRect(x + Math.floor(w * 0.61), baseY - Math.floor(h * 0.50), Math.floor(w * 0.30), Math.floor(h * 0.47));
+
+        ctxRef.fillStyle = light;
+        if (variant % 2 === 0) {
+            ctxRef.fillRect(x + Math.floor(w * 0.19), baseY - Math.floor(h * 0.62), 10, 6);
+            ctxRef.fillRect(x + Math.floor(w * 0.66), baseY - Math.floor(h * 0.42), 8, 5);
+        } else {
+            ctxRef.fillRect(x + Math.floor(w * 0.43), baseY - Math.floor(h * 0.78), 9, 6);
+            ctxRef.fillRect(x + Math.floor(w * 0.10), baseY - Math.floor(h * 0.34), 7, 5);
+        }
+    }
+
+    function buildMidBushLayer(ctxRef, tileW, tileH, pal) {
+        const baseY = GROUND_Y - 2;
+        const clusters = [
+            [0, 86, 54], [62, 72, 43], [121, 101, 68], [210, 68, 45],
+            [257, 112, 73], [354, 77, 50], [421, 92, 63], [491, 78, 44]
+        ];
+        for (let i = 0; i < clusters.length; i++) {
+            const b = clusters[i];
+            drawBushCluster(ctxRef, b[0], baseY, b[1], b[2], pal.bushDark, pal.bushMid, pal.bushLight, i);
+        }
+        ctxRef.fillStyle = 'rgba(13, 30, 24, 0.36)';
+        ctxRef.fillRect(0, baseY - 8, BACKGROUND_TILE_W, 10);
+    }
+
+    function buildFrontGrassLayer(ctxRef, tileW, tileH, pal) {
+        const baseY = GROUND_Y;
+        ctxRef.fillStyle = pal.grassDark;
+        ctxRef.fillRect(0, baseY - 17, BACKGROUND_TILE_W, 17);
+        ctxRef.fillStyle = pal.grassMid;
+        ctxRef.fillRect(0, baseY - 15, BACKGROUND_TILE_W, 5);
+        ctxRef.fillStyle = pal.grassHi;
+        ctxRef.fillRect(0, baseY - 10, BACKGROUND_TILE_W, 3);
+
+        const tufts = [
+            [8, 10], [22, 16], [41, 8], [58, 19], [86, 13], [119, 18],
+            [145, 11], [172, 20], [205, 14], [233, 9], [261, 17],
+            [296, 12], [322, 21], [353, 10], [379, 16], [411, 13],
+            [438, 19], [472, 11], [498, 15]
+        ];
+        for (let i = 0; i < tufts.length; i++) {
+            const t = tufts[i];
+            const x = t[0];
+            const h = t[1];
+            ctxRef.fillStyle = i % 3 === 0 ? pal.grassHi : pal.grassMid;
+            ctxRef.fillRect(x, baseY - h, 3, h);
+            ctxRef.fillRect(x + 4, baseY - Math.floor(h * 0.72), 2, Math.floor(h * 0.72));
+            if (i % 2 === 0) ctxRef.fillRect(x - 4, baseY - Math.floor(h * 0.55), 2, Math.floor(h * 0.55));
+        }
+
+        ctxRef.fillStyle = pal.grassDetail;
+        for (let x = 0; x < BACKGROUND_TILE_W; x += 23) {
+            const y = baseY - 5 - ((x * 7) % 4);
+            ctxRef.fillRect(x, y, 8, 2);
+        }
     }
 
     function bossAttackLevel() {
         if (!bossActive || state === STATE.WIN) return 0;
         if (state !== STATE.BOSS && state !== STATE.DEAD && state !== STATE.GAMEOVER) return 0;
         return clamp01(bossEntranceTimer * 0.75 + bossTime * 0.08);
+    }
+
+    function drawLightningBolt(points, alpha) {
+        ctx.save();
+        ctx.globalAlpha *= alpha;
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
+        ctx.strokeStyle = 'rgba(97, 54, 155, 0.42)';
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(points[0][0], points[0][1]);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+        ctx.stroke();
+        ctx.strokeStyle = '#9d77ff';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(points[0][0], points[0][1]);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+        ctx.stroke();
+        ctx.strokeStyle = '#f0ecff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(points[0][0], points[0][1]);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    function drawBossStorm(alphaScale = 1) {
+        const storm = bossAttackLevel() * alphaScale;
+        if (storm <= 0.02) return;
+
+        const t = performance.now() / 1000;
+        const topH = Math.max(180, GROUND_Y * 0.46);
+        ctx.save();
+
+        const stormGradient = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+        stormGradient.addColorStop(0, 'rgba(4, 8, 18, ' + (0.62 * storm) + ')');
+        stormGradient.addColorStop(0.48, 'rgba(12, 20, 35, ' + (0.42 * storm) + ')');
+        stormGradient.addColorStop(1, 'rgba(24, 18, 28, ' + (0.15 * storm) + ')');
+        ctx.fillStyle = stormGradient;
+        ctx.fillRect(0, 0, W, GROUND_Y);
+
+        // Techo de nubes pesadas: bloques pixelados y en movimiento lento.
+        const cloudRows = [
+            { y: 18, h: 58, step: 92, speed: 0.10, a: 0.54 },
+            { y: 58, h: 72, step: 118, speed: 0.15, a: 0.46 },
+            { y: 116, h: 56, step: 84, speed: 0.22, a: 0.32 }
+        ];
+        for (let r = 0; r < cloudRows.length; r++) {
+            const row = cloudRows[r];
+            const offset = ((backgroundCameraX * row.speed + t * (8 + r * 3)) % row.step + row.step) % row.step;
+            for (let x = -row.step - offset; x < W + row.step; x += row.step) {
+                const wobble = Math.floor(Math.sin(t * 0.7 + x * 0.03 + r) * 5);
+                ctx.globalAlpha = storm * row.a;
+                ctx.fillStyle = r === 0 ? '#111625' : (r === 1 ? '#1a2130' : '#273044');
+                ctx.fillRect(Math.round(x), row.y + wobble, row.step + 34, row.h);
+                ctx.fillRect(Math.round(x + 22), row.y - 14 + wobble, row.step - 18, Math.floor(row.h * 0.48));
+                ctx.fillStyle = r === 0 ? '#242b3a' : '#333b4d';
+                ctx.fillRect(Math.round(x + 8), row.y + row.h - 14 + wobble, row.step - 26, 12);
+                ctx.fillRect(Math.round(x + 48), row.y + 8 + wobble, Math.floor(row.step * 0.42), 10);
+            }
+        }
+        ctx.globalAlpha = 1;
+
+        // Lluvia diagonal, barata de dibujar y detras del gameplay.
+        ctx.save();
+        ctx.globalAlpha = storm * 0.55;
+        ctx.strokeStyle = 'rgba(155, 185, 220, 0.62)';
+        ctx.lineWidth = 1;
+        const rainCount = 72;
+        const rainPhase = t * 360 + backgroundCameraX * 0.34;
+        for (let i = 0; i < rainCount; i++) {
+            const rx = Math.floor(((i * 47 + rainPhase) % (W + 130)) - 80);
+            const ry = Math.floor((i * 91 + rainPhase * 1.7) % GROUND_Y);
+            const len = 12 + (i % 4) * 5;
+            ctx.beginPath();
+            ctx.moveTo(rx, ry);
+            ctx.lineTo(rx - 8, ry + len);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // Relampagos visuales ocasionales, sin tapar el panel.
+        const pulse = (Math.sin(t * 1.7) + Math.sin(t * 2.37 + 1.6) + 2) / 4;
+        const flash = storm * clamp01((pulse - 0.86) / 0.14);
+        if (flash > 0.02) {
+            ctx.fillStyle = 'rgba(180, 200, 255, ' + (0.16 * flash) + ')';
+            ctx.fillRect(0, 0, W, Math.min(GROUND_Y, topH + 80));
+            const x0 = Math.floor(W * (0.22 + ((Math.floor(t * 1.7) % 3) * 0.22)));
+            drawLightningBolt([
+                [x0, 0],
+                [x0 + 16, 42],
+                [x0 - 12, 88],
+                [x0 + 26, 132],
+                [x0 + 6, 190],
+                [x0 + 34, 240]
+            ], flash);
+            drawLightningBolt([
+                [x0 + 6, 132],
+                [x0 - 38, 168],
+                [x0 - 26, 218]
+            ], flash * 0.65);
+        }
+
+        ctx.restore();
     }
 
     function drawCityAttack(alphaScale = 1) {
@@ -1779,19 +2356,25 @@
         const t = performance.now() / 1000;
         const baseY = GROUND_Y - 8;
         ctx.save();
-        ctx.globalAlpha = Math.min(0.9, attack);
+        ctx.globalAlpha = Math.min(0.95, attack);
 
         // Tinte lejano integrado al skyline. Bajo contraste para que no parezca overlay.
-        ctx.fillStyle = isNight ? 'rgba(96, 16, 28, 0.18)' : 'rgba(130, 36, 30, 0.12)';
+        ctx.fillStyle = isNight ? 'rgba(96, 16, 28, 0.24)' : 'rgba(130, 36, 30, 0.18)';
         ctx.fillRect(0, Math.max(0, baseY - 145), W, 145);
+        const fireGlow = ctx.createLinearGradient(0, baseY - 120, 0, baseY + 10);
+        fireGlow.addColorStop(0, 'rgba(255, 92, 32, 0)');
+        fireGlow.addColorStop(0.72, 'rgba(255, 92, 32, ' + (0.16 * attack) + ')');
+        fireGlow.addColorStop(1, 'rgba(255, 184, 74, ' + (0.18 * attack) + ')');
+        ctx.fillStyle = fireGlow;
+        ctx.fillRect(0, baseY - 140, W, 150);
 
         const firePalette = ['#5b1414', '#a32316', '#ff5a1f', '#ff9c1a', '#ffd34d'];
-        for (let i = 0; i < 10; i++) {
-            const fx = Math.floor(((i * 79 - cityOffset * (0.48 + (i % 3) * 0.08)) % (W + 120) + W + 120) % (W + 120) - 60);
-            const fy = Math.floor(baseY - 10 - (i % 4) * 18);
+        for (let i = 0; i < 16; i++) {
+            const fx = Math.floor(((i * 61 - cityOffset * (0.48 + (i % 3) * 0.08)) % (W + 140) + W + 140) % (W + 140) - 70);
+            const fy = Math.floor(baseY - 8 - (i % 5) * 17);
             const flicker = Math.floor((Math.sin(t * 9 + i * 1.7) + 1) * 1.5);
             const scale = 3 + (i % 2);
-            const h = 5 + (i % 3) + flicker;
+            const h = 5 + (i % 4) + flicker;
 
             // Sombra/brasas adheridas al edificio.
             ctx.fillStyle = firePalette[0];
@@ -1813,15 +2396,15 @@
         }
 
         // Humo pixel-art: bloques semitransparentes que suben desde el skyline.
-        for (let i = 0; i < 8; i++) {
-            const sx = Math.floor(((i * 103 - cityOffset * 0.32) % (W + 150) + W + 150) % (W + 150) - 75);
-            const sy = Math.floor(baseY - 58 - (i % 4) * 31 - Math.sin(t * 1.2 + i) * 6);
-            const smoke = isNight ? 'rgba(18, 15, 26, 0.36)' : 'rgba(67, 70, 76, 0.28)';
-            const smokeHi = isNight ? 'rgba(50, 42, 62, 0.22)' : 'rgba(105, 106, 110, 0.18)';
-            for (let p = 0; p < 5; p++) {
-                const block = 10 + ((i + p) % 3) * 4;
-                const px0 = sx + p * 10 - 24 + Math.floor(Math.sin(t * 1.6 + i + p) * 3);
-                const py0 = sy - p * 11;
+        for (let i = 0; i < 13; i++) {
+            const sx = Math.floor(((i * 73 - cityOffset * 0.32) % (W + 160) + W + 160) % (W + 160) - 80);
+            const sy = Math.floor(baseY - 48 - (i % 5) * 27 - Math.sin(t * 1.2 + i) * 7);
+            const smoke = isNight ? 'rgba(15, 14, 24, 0.50)' : 'rgba(49, 52, 59, 0.38)';
+            const smokeHi = isNight ? 'rgba(55, 48, 70, 0.30)' : 'rgba(95, 96, 104, 0.24)';
+            for (let p = 0; p < 6; p++) {
+                const block = 12 + ((i + p) % 3) * 5;
+                const px0 = sx + p * 9 - 28 + Math.floor(Math.sin(t * 1.6 + i + p) * 4);
+                const py0 = sy - p * 12;
                 ctx.fillStyle = p % 2 === 0 ? smoke : smokeHi;
                 ctx.fillRect(px0, py0, block + 8, block);
                 ctx.fillRect(px0 + 6, py0 - 6, block, block);
@@ -1829,88 +2412,28 @@
         }
 
         // Chispas cuadradas pequenas.
-        for (let i = 0; i < 32; i++) {
+        for (let i = 0; i < 54; i++) {
             const sx = Math.floor(((i * 37 - t * 74 - cityOffset * 0.25) % (W + 80) + W + 80) % (W + 80) - 40);
-            const sy = Math.floor(baseY - 145 + ((i * 41 + t * 58) % 125));
+            const sy = Math.floor(baseY - 165 + ((i * 41 + t * 58) % 145));
             const blink = (Math.sin(t * 10 + i) + 1) / 2;
             ctx.globalAlpha = attack * (0.35 + blink * 0.45);
             ctx.fillStyle = i % 4 === 0 ? '#ff9c1a' : '#ffd34d';
             ctx.fillRect(sx, sy, i % 5 === 0 ? 3 : 2, i % 5 === 0 ? 3 : 2);
         }
 
-        ctx.restore();
-    }
-
-    // Bushes/trees front layer
-    const bushSpriteCache = {};
-
-    function buildBushSprite(night) {
-        const key = night ? 'night' : 'day';
-        if (bushSpriteCache[key]) return bushSpriteCache[key];
-        const off = makePixelCanvas(80, 48);
-        const x = off.ctx;
-        const baseY = 46;
-        const dark = night ? '#17391f' : '#4f9457';
-        const mid = night ? '#1f4a2a' : '#5fa66a';
-        const light = night ? '#2a663b' : '#7dd24a';
-        const blade = night ? '#244f2e' : '#67bd3f';
-
-        x.fillStyle = dark;
-        x.beginPath();
-        x.moveTo(0, baseY);
-        x.lineTo(8, baseY - 17);
-        x.lineTo(21, baseY - 31);
-        x.lineTo(36, baseY - 24);
-        x.lineTo(48, baseY - 39);
-        x.lineTo(67, baseY - 22);
-        x.lineTo(80, baseY);
-        x.closePath();
-        x.fill();
-
-        x.fillStyle = mid;
-        x.beginPath();
-        x.moveTo(6, baseY);
-        x.lineTo(17, baseY - 26);
-        x.lineTo(33, baseY - 34);
-        x.lineTo(43, baseY - 20);
-        x.lineTo(59, baseY - 31);
-        x.lineTo(73, baseY);
-        x.closePath();
-        x.fill();
-
-        x.fillStyle = light;
-        x.fillRect(24, baseY - 31, 12, 10);
-        x.fillRect(53, baseY - 26, 9, 8);
-
-        x.strokeStyle = blade;
-        x.lineWidth = 3;
-        for (let i = 0; i < 5; i++) {
-            const gx = 7 + i * 14;
-            const gh = 12 + (i % 3) * 4;
-            x.beginPath();
-            x.moveTo(gx, baseY + 2);
-            x.lineTo(gx + (i % 2 === 0 ? 2 : -2), baseY - gh);
-            x.stroke();
+        ctx.globalAlpha = Math.min(0.86, attack);
+        for (let i = 0; i < 22; i++) {
+            const wx = Math.floor(((i * 43 - cityOffset * 0.55) % (W + 100) + W + 100) % (W + 100) - 50);
+            const wy = Math.floor(baseY - 108 + (i * 19) % 92);
+            const hot = (Math.sin(t * 5.5 + i) + 1) / 2;
+            ctx.fillStyle = hot > 0.55 ? '#ff9c1a' : '#a32316';
+            ctx.fillRect(wx, wy, 4, 5);
+            if (hot > 0.78) {
+                ctx.fillStyle = '#ffd34d';
+                ctx.fillRect(wx + 1, wy, 2, 2);
+            }
         }
 
-        bushSpriteCache[key] = off.canvas;
-        return off.canvas;
-    }
-
-    function drawBushes() {
-        const baseY = GROUND_Y - 4;
-        ctx.save();
-        const off = bushOffset;
-        const n = nightLevel();
-        const daySprite = buildBushSprite(false);
-        const nightSprite = buildBushSprite(true);
-        for (let x = -((off) % 70) - 70; x < W + 70; x += 70) {
-            const y = baseY + Math.sin((x + off) * 0.02) * 2;
-            ctx.globalAlpha = 1 - n;
-            ctx.drawImage(daySprite, Math.round(x), Math.round(y - 46), 80, 48);
-            ctx.globalAlpha = n;
-            ctx.drawImage(nightSprite, Math.round(x), Math.round(y - 46), 80, 48);
-        }
         ctx.restore();
     }
 
@@ -2021,6 +2544,24 @@
         ctx.restore();
     }
 
+    function drawPipeSegment(x, y0, y1, width, startCap, endCap) {
+        const top = Math.max(0, Math.min(GROUND_Y, Math.round(y0)));
+        const bottom = Math.max(0, Math.min(GROUND_Y, Math.round(y1)));
+        if (bottom - top <= 4) return;
+
+        if (startCap) ctx.drawImage(pipeSprite.cap, x - 4, top, width + 8, PIPE_CAP_H);
+        const bodyY = top + (startCap ? PIPE_CAP_H : 0);
+        const bodyBottom = bottom - (endCap ? PIPE_CAP_H : 0);
+        const bodyH = bodyBottom - bodyY;
+        if (bodyH > 0) {
+            ctx.drawImage(pipeSprite.body, 0, 0, PIPE_WIDTH, 1, x, bodyY, width, bodyH);
+            ctx.fillStyle = '#243f0e';
+            ctx.fillRect(x, bodyY, 2, bodyH);
+            ctx.fillRect(x + width - 2, bodyY, 2, bodyH);
+        }
+        if (endCap) ctx.drawImage(pipeSprite.cap, x - 4, bottom - PIPE_CAP_H, width + 8, PIPE_CAP_H);
+    }
+
     function drawPipe(p) {
         const fade = p.fadeOut !== undefined ? p.fadeOut : 1.0;
         const pWidth = getPipeWidth(p);
@@ -2033,26 +2574,9 @@
         ctx.scale(scale, 1);
         ctx.translate(-cx, 0);
 
-        // Top pipe
-        const topBodyH = p.top - PIPE_CAP_H;
-        if (topBodyH > 0) {
-            ctx.drawImage(pipeSprite.body, 0, 0, PIPE_WIDTH, 1, p.x, 0, pWidth, topBodyH);
-            ctx.fillStyle = '#243f0e';
-            ctx.fillRect(p.x, 0, 2, topBodyH);
-            ctx.fillRect(p.x + pWidth - 2, 0, 2, topBodyH);
-        }
-        ctx.drawImage(pipeSprite.cap, p.x - 4, p.top - PIPE_CAP_H, pWidth + 8, PIPE_CAP_H);
-
-        // Bottom pipe
-        ctx.drawImage(pipeSprite.cap, p.x - 4, p.bottom, pWidth + 8, PIPE_CAP_H);
-        const botY = p.bottom + PIPE_CAP_H;
-        const botH = GROUND_Y - botY;
-        if (botH > 0) {
-            ctx.drawImage(pipeSprite.body, 0, 0, PIPE_WIDTH, 1, p.x, botY, pWidth, botH);
-            ctx.fillStyle = '#243f0e';
-            ctx.fillRect(p.x, botY, 2, botH);
-            ctx.fillRect(p.x + pWidth - 2, botY, 2, botH);
-        }
+        const floating = p.topStart !== null && p.topStart !== undefined;
+        drawPipeSegment(p.x, floating ? p.topStart : 0, p.top, pWidth, floating, true);
+        drawPipeSegment(p.x, p.bottom, floating ? p.bottomEnd : GROUND_Y, pWidth, true, floating);
 
         if (state === STATE.WIN) drawDesertPipeOrnaments(p.x, p.top, p.bottom, pWidth);
         ctx.restore();
@@ -2125,20 +2649,18 @@
         if (state === STATE.WIN) return;
 
         const t = performance.now() / 1000;
-        const cell = BOSS_PIXEL * sc;
-        const left = -BOSS_SPRITE_W * cell / 2;
-        const top = -BOSS_SPRITE_H * cell / 2;
+        const unit = BOSS_PIXEL * sc;
         const charge = bossPhase === 1 ? clamp01(bossTime / BOSS_RAY_PHASE_AT) : 1;
         const attackBoost = bossPhase >= 2 ? 1.0 : 0.45 + charge * 0.55;
         const panels = [
-            { x: 12, y: 10, w: 4, h: 1, c: '#5ee8ff', rate: 1.4, seed: 1.1, on: 2 },
-            { x: 18, y: 12, w: 2, h: 1, c: '#ffd34d', rate: 1.1, seed: 2.7, on: 3 },
-            { x: 30, y: 11, w: 2, h: 2, c: '#b45cff', rate: 1.7, seed: 4.3, on: 2 },
-            { x: 35, y: 15, w: 1, h: 3, c: '#ff5a1f', rate: 1.25, seed: 5.8, on: 2 },
-            { x: 16, y: 21, w: 3, h: 1, c: '#ef1f2d', rate: 1.9, seed: 7.2, on: 3 },
-            { x: 24, y: 18, w: 2, h: 2, c: '#8b28ff', rate: 1.55, seed: 8.5, on: 2 },
-            { x: 33, y: 22, w: 2, h: 1, c: '#5ee8ff', rate: 1.35, seed: 9.8, on: 2 },
-            { x: 23, y: 6, w: 2, h: 1, c: '#ffe27a', rate: 1.05, seed: 11.1, on: 3 }
+            { x: -20, y: -13, w: 5, h: 1, c: '#5ee8ff', rate: 1.4, seed: 1.1, on: 2 },
+            { x: -10, y: -11, w: 3, h: 1, c: '#ffd34d', rate: 1.1, seed: 2.7, on: 3 },
+            { x: 5, y: -9, w: 2, h: 2, c: '#b45cff', rate: 1.7, seed: 4.3, on: 2 },
+            { x: 12, y: -4, w: 1, h: 3, c: '#ff5a1f', rate: 1.25, seed: 5.8, on: 2 },
+            { x: -14, y: 8, w: 4, h: 1, c: '#ef1f2d', rate: 1.9, seed: 7.2, on: 3 },
+            { x: -2, y: 5, w: 2, h: 2, c: '#8b28ff', rate: 1.55, seed: 8.5, on: 2 },
+            { x: 11, y: 9, w: 2, h: 1, c: '#5ee8ff', rate: 1.35, seed: 9.8, on: 2 },
+            { x: -2, y: -17, w: 2, h: 1, c: '#ffe27a', rate: 1.05, seed: 11.1, on: 3 }
         ];
 
         ctx.save();
@@ -2151,14 +2673,14 @@
             const alpha = strobe
                 ? (0.35 + attackBoost * 0.55 + Math.sin(t * 7 + p.seed) * 0.08)
                 : 0.12 + charge * 0.1;
-            const px0 = left + p.x * cell;
-            const py0 = top + p.y * cell;
-            const pw = p.w * cell;
-            const ph = p.h * cell;
+            const px0 = p.x * unit;
+            const py0 = p.y * unit;
+            const pw = p.w * unit;
+            const ph = p.h * unit;
 
             ctx.globalAlpha = 0.45;
             ctx.fillStyle = '#05030b';
-            ctx.fillRect(px0 - cell * 0.35, py0 - cell * 0.35, pw + cell * 0.7, ph + cell * 0.7);
+            ctx.fillRect(px0 - unit * 0.35, py0 - unit * 0.35, pw + unit * 0.7, ph + unit * 0.7);
 
             ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
             ctx.fillStyle = p.c;
@@ -2166,9 +2688,121 @@
 
             if (strobe) {
                 ctx.globalAlpha = Math.max(0, Math.min(0.42, alpha * 0.45));
-                ctx.fillRect(px0 - cell, py0 - cell, pw + cell * 2, ph + cell * 2);
+                ctx.fillRect(px0 - unit, py0 - unit, pw + unit * 2, ph + unit * 2);
             }
         }
+        ctx.restore();
+    }
+
+    function drawBossEyeModule(x, y, w, h, color, hi, blink, lookY, sc) {
+        const unit = BOSS_PIXEL * sc;
+        const c = BOSS_COLORS;
+        ctx.fillStyle = c.k;
+        ctx.fillRect(x * unit, y * unit, w * unit, h * unit);
+
+        if (blink) {
+            ctx.fillStyle = color;
+            ctx.globalAlpha *= 0.75;
+            ctx.fillRect((x + 1) * unit, (y + Math.floor(h / 2)) * unit, (w - 2) * unit, unit);
+            ctx.globalAlpha /= 0.75;
+            return;
+        }
+
+        ctx.fillStyle = color;
+        ctx.fillRect((x + 1) * unit, (y + 1) * unit, (w - 2) * unit, (h - 2) * unit);
+        ctx.fillStyle = hi;
+        ctx.fillRect((x + w - 3) * unit, (y + 1 + lookY) * unit, unit, Math.max(unit, 2 * unit));
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect((x + 1) * unit, (y + h - 2) * unit, (w - 2) * unit, unit);
+    }
+
+    function drawBossCoreModule(sc, t, lookY) {
+        const unit = BOSS_PIXEL * sc;
+        const c = BOSS_COLORS;
+        const pulse = 0.65 + Math.sin(t * 6.5) * 0.22 + (bossPhase === 3 ? 0.22 : 0);
+        ctx.fillStyle = c.k;
+        ctx.fillRect(-4 * unit, -3 * unit, 9 * unit, 9 * unit);
+        ctx.fillStyle = c.core;
+        ctx.fillRect(-3 * unit, -2 * unit, 7 * unit, 7 * unit);
+        ctx.fillStyle = c.blue;
+        ctx.fillRect(0, (-1 + lookY) * unit, 3 * unit, 3 * unit);
+        ctx.fillStyle = c.coreHi;
+        ctx.fillRect(-1 * unit, -2 * unit, 2 * unit, 2 * unit);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.42 + pulse * 0.28;
+        const glow = ctx.createRadialGradient(0, 0, 2 * unit, 0, 0, 13 * unit * pulse);
+        glow.addColorStop(0, 'rgba(139, 40, 255, 0.72)');
+        glow.addColorStop(1, 'rgba(139, 40, 255, 0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(-18 * unit, -18 * unit, 36 * unit, 36 * unit);
+        ctx.restore();
+    }
+
+    function drawBossTubeGlow(sc, t) {
+        if (state === STATE.WIN) return;
+        const unit = BOSS_PIXEL * sc;
+        const charge = bossPhase === 1 ? clamp01(bossTime / BOSS_RAY_PHASE_AT) : 1;
+        const tubePositions = [-16, -5, 6];
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < tubePositions.length; i++) {
+            const blink = (Math.sin(t * (9.5 + i) + i * 1.3) + 1) / 2;
+            const power = 0.18 + charge * 0.55 + blink * 0.25 + (bossPhase >= 2 ? 0.25 : 0);
+            const gx = tubePositions[i] * unit;
+            const gy = -18 * unit;
+            const r = (7 + power * 10) * unit;
+            const glow = ctx.createRadialGradient(gx, gy, 1, gx, gy, r);
+            glow.addColorStop(0, 'rgba(255, 211, 77, ' + Math.min(0.78, power) + ')');
+            glow.addColorStop(1, 'rgba(255, 211, 77, 0)');
+            ctx.fillStyle = glow;
+            ctx.globalAlpha = Math.min(1, power);
+            ctx.fillRect(gx - r, gy - r, r * 2, r * 2);
+        }
+        ctx.restore();
+    }
+
+    function drawBossModules(sc, drawY) {
+        const t = performance.now() / 1000;
+        const finRot = Math.sin(t * 3.2 + boss.movePhase) * 0.24 + (bossPhase >= 2 ? -0.08 : 0);
+        const tubeSway = Math.sin(t * 2.4) * 0.04;
+        const legLift = Math.sin(t * 3.2) * 0.55;
+        const blink = Math.sin(t * 2.1 + 0.4) > 0.975 || Math.sin(t * 4.7 + 1.9) > 0.985;
+        const trackingY = Math.max(-1, Math.min(1, Math.round((bird.y - drawY) / Math.max(80, H * 0.22))));
+        const c = BOSS_COLORS;
+        const unit = BOSS_PIXEL * sc;
+        const bodyBreath = Math.sin(t * 1.5 + boss.bobPhase) * 0.012;
+
+        drawBossTubeGlow(sc, t);
+        drawBossPart(bossParts.fin, 20.5 + Math.sin(t * 2.7) * 0.5, 1, sc, finRot);
+        drawBossPart(bossParts.leg, -14.5, 16.4 + legLift, sc, -0.04);
+        drawBossPart(bossParts.leg, 4.5, 16.2 - legLift * 0.65, sc, 0.04);
+        ctx.save();
+        ctx.scale(1 + bodyBreath, 1 - bodyBreath * 0.7);
+        drawBossPart(bossParts.body, -5, 0, sc);
+        ctx.restore();
+
+        drawBossPanelLights(sc);
+
+        drawBossPart(bossParts.tube, -16, -18.2 + Math.sin(t * 4) * 0.35, sc, -0.13 + tubeSway);
+        drawBossPart(bossParts.tube, -5, -20.0 + Math.sin(t * 4 + 1.1) * 0.35, sc, tubeSway * 0.5);
+        drawBossPart(bossParts.tube, 6, -18.3 + Math.sin(t * 4 + 2.2) * 0.35, sc, 0.13 + tubeSway);
+
+        drawBossEyeModule(-25, -5, 8, 7, c.red, c.redHi, blink, 0, sc);
+        drawBossEyeModule(-16, -5, 8, 7, c.red, c.redHi, blink, 0, sc);
+        ctx.save();
+        ctx.translate(-1 * unit, 2 * unit);
+        drawBossCoreModule(sc, t, trackingY);
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = bossPhase >= 2 ? 0.55 : 0.32;
+        ctx.fillStyle = c.core;
+        ctx.fillRect(21 * unit, 11 * unit, 2 * unit, 2 * unit);
+        ctx.fillRect(25 * unit, 15 * unit, unit, unit);
+        ctx.fillRect(23 * unit, -9 * unit, 2 * unit, 2 * unit);
         ctx.restore();
     }
 
@@ -2204,17 +2838,16 @@
         ctx.ellipse(drawX, drawY + sh * 0.4, sw * 0.4, 8 * sc, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Sprite del jefe (scaled)
+        // Modular boss: body, fin, eyes, tubes, core and legs move separately.
         ctx.save();
         ctx.translate(drawX, drawY);
         ctx.rotate(tilt);
-        ctx.drawImage(bossFrames[boss.wing], -sw / 2, -sh / 2, sw, sh);
-        drawBossPanelLights(sc);
+        drawBossModules(sc, drawY);
         ctx.restore();
 
         if (state !== STATE.WIN) {
             const pulse = 0.55 + Math.sin(performance.now() / 130) * 0.2 + (bossPhase === 3 ? 0.25 : 0);
-            const coreX = drawX + sw * 0.03;
+            const coreX = drawX - sw * 0.02;
             const coreY = drawY + sh * 0.04;
             const coreR = (16 + 10 * pulse) * sc;
             const coreGlow = ctx.createRadialGradient(coreX, coreY, 2, coreX, coreY, coreR);
@@ -2227,7 +2860,7 @@
         // Brillo en los ojos cuando está cargando un rayo
         if (boss.eyeGlow > 0) {
             const glowR = 22 + boss.eyeGlow * 22;
-            const eyeX = drawX - sw * 0.27;
+            const eyeX = drawX - sw * 0.28;
             const eyeY = drawY - sh * 0.08;
             const eyeGlow = ctx.createRadialGradient(eyeX, eyeY, 2, eyeX, eyeY, glowR);
             eyeGlow.addColorStop(0, 'rgba(255, 80, 90, ' + (boss.eyeGlow * 0.9) + ')');
@@ -2608,7 +3241,7 @@
 
         if (score === bestScore && bestScore > 0) {
             ctx.save();
-            ctx.translate(px0 + pw - 80, py + 120);
+            ctx.translate(px0 + pw - 128, py + 118);
             ctx.rotate(-0.18);
             ctx.fillStyle = '#ff5252';
             roundedRect(-30, -10, 60, 20, 4);
@@ -2710,23 +3343,15 @@
             ctx.translate(sx, sy);
         }
 
-        drawSky();
-        drawStars();
-        drawCelestial();
-        drawClouds();
         const dProg = desertProgress();
+        drawBackground(1 - dProg);
         if (dProg > 0) {
-            ctx.save();
-            ctx.globalAlpha = 1 - dProg;
-            drawCity();
+            drawBossStorm(1 - dProg);
             drawCityAttack(1 - dProg);
-            drawBushes();
-            ctx.restore();
             drawDesertScenery(dProg);
         } else {
-            drawCity();
+            drawBossStorm();
             drawCityAttack();
-            drawBushes();
         }
 
         // El jefe se dibuja detrás de los tubos pero delante de la ciudad

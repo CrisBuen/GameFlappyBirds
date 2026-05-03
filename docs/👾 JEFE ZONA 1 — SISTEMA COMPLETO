@@ -1,0 +1,264 @@
+👾 JEFE ZONA 1 — SISTEMA COMPLETO (HD-2D EN CANVAS)
+
+---
+
+🧠 OBJETIVO
+
+Transformar el jefe en:
+
+- entidad viva (no sprite plano)
+- con fases claras
+- con animaciones dinámicas
+- con impacto visual fuerte
+
+---
+
+🔥 1. ESTRUCTURA DEL JEFE (MODULAR)
+
+NO usar 1 sprite.
+
+Boss
+ ├── Body
+ ├── Fin (aleta)
+ ├── Eyes (3)
+ ├── Tubes (3)
+ ├── Glow core
+ ├── Shadow
+ ├── Particles
+
+---
+
+🌀 2. ANIMACIÓN BASE (FLOTACIÓN)
+
+boss.y += Math.sin(time * 1.5) * 2;
+
+---
+
+🐟 3. ALETA (VIDA DEL JEFE)
+
+fin.rotation = Math.sin(time * 3) * 0.2;
+
+👉 Nunca debe estar estática
+
+---
+
+👁️ 4. OJOS (INTELIGENCIA)
+
+if (Math.random() < 0.02) blink = true;
+
+- 2 rojos → agresivos
+- 1 azul → tracking jugador
+
+👉 Parpadeo irregular
+
+---
+
+⚡ 5. CARGA DE ATAQUE (TUBOS)
+
+for (let i = 0; i < tubes.length; i++) {
+  tubes[i].glow = Math.sin(time * 10) > 0 ? 1 : 0;
+}
+
+👉 efecto energía acumulando
+
+---
+
+🌆 6. TRANSICIÓN DE JEFE (FASE 1)
+
+Cuando score >= 150:
+
+- oscurecer fondo
+- destruir ciudad (animación)
+- partículas + fuego
+- cámara shake
+
+---
+
+⏱️ 7. FASE 1 (60 segundos)
+
+Objetivo:
+👉 sobrevivir
+
+Cambios:
+
+- velocidad aumentada
+- tubos más agresivos
+- jefe flotando encima
+
+---
+
+🔥 8. TRANSICIÓN FASE 2
+
+- tubos desaparecen
+- sonido grave
+- jefe se mueve al fondo derecha
+- escala x2
+
+boss.scale = 2;
+boss.x = canvas.width * 0.7;
+
+---
+
+👾 9. FASE 2 (60 segundos)
+
+🧠 Comportamiento:
+
+- ocupa 60% pantalla derecha
+- dispara rayos
+
+---
+
+⚡ Rayos:
+
+createLaser(boss.x, player.y);
+
+---
+
+😡 10. MODO IRA (últimos 30s)
+
+if (timeLeft < 30) {
+  shoot(2 + Math.random() * 2);
+}
+
+👉 2–3 rayos simultáneos
+
+---
+
+💀 11. FINAL AUTOMÁTICO
+
+Jugador NO controla:
+
+- pájaro vuela solo
+- cámara centrada
+- sonido épico
+
+---
+
+⚡ Ataque final:
+
+player.charge = true;
+shootFinalBeam();
+
+---
+
+💥 12. MUERTE DEL JEFE
+
+- humo
+- fuego
+- caída lenta
+
+---
+
+🔮 13. ORBE (PROGRESIÓN)
+
+spawnOrb();
+
+- efecto glow
+- flotación
+- absorción al jugador
+
+---
+
+🌌 14. TRANSICIÓN ZONA 2
+
+- velocidad extrema
+- túnel de luz
+- blur
+
+---
+
+🏜️ 15. JEFE ZONA 2 (ARENA)
+
+🧱 Diseño:
+
+Pyramid
+Hands
+Orbit stones
+Sand particles
+
+---
+
+🌀 Órbita:
+
+angle += 0.05;
+x = cx + cos(angle) * radius;
+y = cy + sin(angle) * radius;
+
+---
+
+🌪️ 16. EFECTO ARENA
+
+- partículas constantes
+- viento
+- distorsión leve
+
+---
+
+🤖 17. PROMPTS PARA IA (CLAUDE / GPT)
+
+🎮 Sistema jefe:
+
+Create a modular boss system in HTML5 Canvas.
+
+Features:
+- floating animation
+- blinking eyes (3 types)
+- attack charge system (3 tubes glowing)
+- 2 phases
+- rage mode last 30 seconds
+- final cinematic auto control
+- particle system (fire, smoke, sand)
+
+---
+
+🌆 Fondo dinámico:
+
+Create parallax background system with:
+- sky
+- clouds
+- city
+- destruction animation
+- fire and smoke particles
+- dynamic lighting
+
+---
+
+👾 Jefe arena:
+
+Create a desert boss with:
+- pyramid body
+- floating hands
+- orbiting stones
+- sand particles
+- wind effect
+- organic movement
+
+---
+
+⚠️ ERRORES A EVITAR
+
+❌ sprites estáticos
+❌ ataques sin telegraph
+❌ sin transición entre fases
+
+---
+
+🧠 REGLA DE ORO
+
+👉 Todo debe moverse
+👉 Todo debe reaccionar
+👉 Todo debe tener peso
+
+---
+
+🚀 RESULTADO FINAL
+
+Tu juego pasa de:
+👉 “Flappy con jefe”
+
+A:
+👉 “Experiencia tipo boss fight completa estilo arcade moderno”
+
+---
+
+🔥 FIN

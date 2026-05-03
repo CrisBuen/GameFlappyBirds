@@ -44,7 +44,19 @@
                 <span id="vol-value">20%</span>
             </div>
             <div class="vp-row">
+                <span class="vp-label">Juego</span>
+                <span id="game-vol-value" class="vp-value">70%</span>
+            </div>
+            <div class="vp-row">
+                <button id="game-vol-down" class="vp-btn" aria-label="Bajar volumen del juego">−</button>
+                <input id="game-vol-slider" type="range" min="0" max="100" step="1" value="70" />
+                <button id="game-vol-up" class="vp-btn" aria-label="Subir volumen del juego">+</button>
+            </div>
+            <div class="vp-row">
                 <button id="play-music-btn" class="vp-play-btn">▶ Reproducir música</button>
+            </div>
+            <div class="vp-row">
+                <button id="next-track-btn" class="vp-play-btn vp-secondary-btn">Siguiente canción</button>
             </div>
             <div id="music-status" class="vp-status"></div>
         </div>
